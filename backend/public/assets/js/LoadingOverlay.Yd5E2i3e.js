@@ -1,0 +1,1 @@
+import{_ as o}from"./index.B3jqSoNt.js";import{g as a,j as s,k as r}from"./vendor-vue.B4lmn9tu.js";const t={name:"LoadingOverlay"},n={class:"loading-overlay"};function c(d,e,l,i,_,p){return a(),s("div",n,[...e[0]||(e[0]=[r("div",{class:"loader"},null,-1)])])}const v=o(t,[["render",c],["__scopeId","data-v-e0c87671"]]);export{v as L};

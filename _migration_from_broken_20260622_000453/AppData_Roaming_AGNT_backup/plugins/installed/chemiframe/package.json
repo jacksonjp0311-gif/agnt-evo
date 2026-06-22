@@ -1,0 +1,10 @@
+{
+  "name": "chemiframe",
+  "version": "3.0.0",
+  "type": "module",
+  "description": "AGNT plugin for high-level chemical programming via CHEMIFRAME — self-contained, marketplace-ready",
+  "author": "James Paul Jackson",
+  "license": "MIT",
+  "main": "chemiframe-compile.js",
+  "dependencies": {}
+}

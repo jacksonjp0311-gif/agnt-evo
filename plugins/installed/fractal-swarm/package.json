@@ -1,0 +1,9 @@
+{
+  "name": "fractal-swarm",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Fractal Swarm Agents plugin — spawn governance-bound agent trees, run bounded web workloads, harvest results with cryptographic sacrifice logs.",
+  "author": "James Paul Jackson",
+  "main": "swarm-spawn.js",
+  "dependencies": {}
+}

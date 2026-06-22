@@ -1,0 +1,13 @@
+Generating 5000 samples...
+Generating 5000 samples from 72 base templates...
+  Base repetitions: 69
+  Augmented samples: 32
+  Generated: 5000 samples
+  Feature shape: (5000, 128)
+  Quality range: [0.000, 1.000]
+  Issue label means: [0.27  0.243 0.119 0.193 0.327 0.377]
+Quality: mean=0.709 range=[0.358,0.969]
+Tokenizing 5000 samples...
+Tokens: (5000, 256)
+Data saved!
+Files: _train_toks.npy((5000, 256)), _train_feat.npy((5000, 128)), _train_qual.npy((5000,)), _train_issues.npy((5000, 6))

@@ -1,0 +1,9 @@
+from dataclasses import dataclass, field
+from typing import Any, Dict, List
+
+
+@dataclass
+class ApiResponse:
+    ok: bool
+    payload: Dict[str, Any] = field(default_factory=dict)
+    errors: List[str] = field(default_factory=list)

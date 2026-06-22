@@ -1,0 +1,9 @@
+PHASE 2: TRAINING
+============================================================
+Loaded: toks=(5000, 256) feat=(5000, 128) qual=(5000,) issues=(5000, 6)
+Quality: mean=0.709 range=[0.358,0.969]
+C:\Users\jacks\AppData\Roaming\Python\Python312\site-packages\torch\nn\modules\transformer.py:379: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  warnings.warn(
+Model: 4,026,329 params
+
+Training 50 epochs, batch 64, 4000 samples...

@@ -1,0 +1,12 @@
+{
+  "name": "chemiframe-agnt-plugin",
+  "version": "3.0.0",
+  "description": "AGNT plugin: high-level chemical programming with full synthesis pipeline",
+  "main": "chemiframe-compile.js",
+  "scripts": {
+    "build": "node build-plugin.js chemiframe",
+    "test": "node --experimental-vm-modules test_suite.js"
+  },
+  "keywords": ["agnt", "chemistry", "plugin", "synthesis"],
+  "license": "MIT"
+}

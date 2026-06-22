@@ -1,0 +1,17 @@
+SHORT TRAINING — 10 epochs, 2000 samples
+============================================================
+Generating 2000 samples from 72 base templates...
+  Base repetitions: 27
+  Augmented samples: 56
+  Generated: 2000 samples
+  Feature shape: (2000, 128)
+  Quality range: [0.000, 1.000]
+  Issue label means: [0.27  0.24  0.119 0.193 0.326 0.377]
+Quality: mean=0.710 range=[0.359,0.953]
+Tokens: (2000, 256)
+C:\Users\jacks\AppData\Roaming\Python\Python312\site-packages\torch\nn\modules\transformer.py:379: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  warnings.warn(
+Model: 4,026,329 params
+
+Training 10 epochs...
+  Epoch  1/10  train=0.4308  val=0.3929  mae=0.1119  lr=1.50e-04

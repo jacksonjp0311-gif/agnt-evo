@@ -1,0 +1,155 @@
+{
+  "name": "fractal-swarm",
+  "displayName": "Fractal Swarm Agents",
+  "version": "1.0.0",
+  "description": "Spawn governance-bound agent trees that fan out like lightning branches to scrape, fetch, and harvest data in parallel. Includes workload runner, honorable pruning with cryptographic sacrifice logs, and real-time swarm telemetry.",
+  "author": "James Paul Jackson",
+  "icon": "bolt",
+  "homepage": "https://github.com/jacksonjp0311-gif/Agentic-Fractal-Swarm-AGNT-Plugin",
+  "tools": [
+    {
+      "type": "swarm-configure",
+      "entryPoint": "./swarm-configure.js",
+      "schema": {
+        "title": "Swarm Configure",
+        "category": "utility",
+        "type": "swarm-configure",
+        "icon": "bolt",
+        "description": "Define swarm topology: depth, branch factor, concurrency, and agent caps. Returns a validated config object consumed by swarm-spawn.",
+        "parameters": {
+          "maxDepth": { "type": "number", "inputType": "number", "required": false, "default": 3, "minimum": 1, "maximum": 10, "description": "Maximum tree depth. Each level fans out by branchFactor." },
+          "maxAgentsTotal": { "type": "number", "inputType": "number", "required": false, "default": 25, "minimum": 1, "maximum": 500, "description": "Hard cap on total agents across the entire tree." },
+          "branchFactor": { "type": "number", "inputType": "number", "required": false, "default": 2, "minimum": 1, "maximum": 10, "description": "Number of children each agent spawns." },
+          "maxConcurrent": { "type": "number", "inputType": "number", "required": false, "default": 4, "minimum": 1, "maximum": 50, "description": "Max concurrent fetch operations." },
+          "maxResultBytes": { "type": "number", "inputType": "number", "required": false, "default": 250000, "minimum": 1024, "maximum": 10000000, "description": "Max bytes per agent result before truncation." },
+          "timeoutSeconds": { "type": "number", "inputType": "number", "required": false, "default": 15, "minimum": 1, "maximum": 120, "description": "HTTP request timeout in seconds." },
+          "proxyCooldownSeconds": { "type": "number", "inputType": "number", "required": false, "default": 90, "minimum": 5, "maximum": 600, "description": "Seconds to cool down a failed proxy." },
+          "demoUrl": { "type": "string", "inputType": "text", "required": false, "default": "https://example.com/", "description": "Default URL if no targets are provided to swarm-spawn." },
+          "instructions": { "type": "string", "inputType": "textarea", "required": false, "default": "Fetch and summarize the page content.", "description": "Instructions for each agent's workload." }
+        },
+        "outputs": {
+          "success": { "type": "boolean", "description": "Whether configuration is valid" },
+          "config": { "type": "object", "description": "Validated swarm configuration object" },
+          "validation": { "type": "object", "description": "Governance validation result" },
+          "warnings": { "type": "array", "description": "Topology warnings" },
+          "summary": { "type": "string", "description": "Human-readable config summary" },
+          "error": { "type": "string", "description": "Error message if invalid" }
+        }
+      }
+    },
+    {
+      "type": "swarm-spawn",
+      "entryPoint": "./swarm-spawn.js",
+      "schema": {
+        "title": "Swarm Spawn",
+        "category": "action",
+        "type": "swarm-spawn",
+        "icon": "bolt",
+        "description": "Main orchestrator. Recursively spawns a fractal agent tree, runs bounded fetch workloads in parallel, and returns a full spawn manifest with results.",
+        "parameters": {
+          "config": { "type": "object", "inputType": "codearea", "required": true, "description": "Config object from swarm-configure (pass the .config output)." },
+          "targetUrls": { "type": "string", "inputType": "textarea", "required": false, "description": "Newline-separated URLs for agents to fetch. If empty, uses demoUrl from config." },
+          "proxies": { "type": "string", "inputType": "textarea", "required": false, "description": "Optional proxy list (one per line). Format: protocol://user:pass@host:port" }
+        },
+        "outputs": {
+          "success": { "type": "boolean", "description": "Whether the swarm completed" },
+          "agentsSpawned": { "type": "number", "description": "Total agents spawned" },
+          "spawnManifest": { "type": "object", "description": "Tree structure with agent IDs, depths, and URLs" },
+          "results": { "type": "array", "description": "Per-agent results: agentId, url, status, title, bytes, textPreview" },
+          "harvest": { "type": "object", "description": "Aggregate harvest: successCount, failCount, totalBytes" },
+          "auditSummary": { "type": "object", "description": "Audit log summary with event counts" },
+          "proxyStats": { "type": "array", "description": "Proxy pool statistics" },
+          "errors": { "type": "array", "description": "Error messages" },
+          "warnings": { "type": "array", "description": "Warning messages" },
+          "elapsedMs": { "type": "number", "description": "Total elapsed time in milliseconds" },
+          "summary": { "type": "string", "description": "Human-readable swarm summary" }
+        }
+      }
+    },
+    {
+      "type": "swarm-workload",
+      "entryPoint": "./swarm-workload.js",
+      "schema": {
+        "title": "Swarm Workload",
+        "category": "action",
+        "type": "swarm-workload",
+        "icon": "bolt",
+        "description": "Run a single bounded fetch/scrape workload. Useful for testing or one-off agent work without spawning a full tree.",
+        "parameters": {
+          "url": { "type": "string", "inputType": "text", "required": true, "description": "Target URL to fetch (http/https)." },
+          "timeout": { "type": "number", "inputType": "number", "required": false, "default": 15, "minimum": 1, "maximum": 120, "description": "Request timeout in seconds." },
+          "maxBytes": { "type": "number", "inputType": "number", "required": false, "default": 250000, "minimum": 1024, "maximum": 10000000, "description": "Max response size in bytes." },
+          "extractMode": { "type": "string", "inputType": "select", "required": false, "options": ["text", "html", "links", "headings", "all"], "default": "text", "description": "Extraction mode: text (cleaned), html (raw), links (URLs only), headings (H1-H6), all (combined JSON)." }
+        },
+        "outputs": {
+          "success": { "type": "boolean", "description": "Whether the fetch succeeded" },
+          "content": { "type": "string", "description": "Extracted content" },
+          "bytes": { "type": "number", "description": "Bytes of extracted content" },
+          "title": { "type": "string", "description": "Page title" },
+          "status": { "type": "number", "description": "HTTP status code" },
+          "metadata": { "type": "object", "description": "Full metadata: url, status, contentType, totalBytes, truncated, title, metaDescription, elapsedMs" },
+          "error": { "type": "string", "description": "Error message if failed" },
+          "elapsedMs": { "type": "number", "description": "Elapsed time in milliseconds" }
+        }
+      }
+    },
+    {
+      "type": "swarm-prune",
+      "entryPoint": "./swarm-prune.js",
+      "schema": {
+        "title": "Swarm Prune",
+        "category": "action",
+        "type": "swarm-prune",
+        "icon": "bolt",
+        "description": "Harvests results from a swarm run, generates cryptographic sacrifice hashes for each agent, and produces a cleanup report. The honorable pruning ritual.",
+        "parameters": {
+          "spawnManifest": { "type": "object", "inputType": "codearea", "required": false, "description": "Spawn manifest from swarm-spawn (.spawnManifest output)." },
+          "results": { "type": "array", "inputType": "codearea", "required": false, "description": "Results array from swarm-spawn (.results output)." },
+          "harvest": { "type": "object", "inputType": "codearea", "required": false, "description": "Harvest summary from swarm-spawn (.harvest output)." }
+        },
+        "outputs": {
+          "success": { "type": "boolean", "description": "Whether pruning completed" },
+          "harvestedCount": { "type": "number", "description": "Number of agents harvested" },
+          "harvestData": { "type": "array", "description": "Array of harvested agent results" },
+          "harvestJsonl": { "type": "string", "description": "Harvest data as JSONL string" },
+          "sacrificeHashes": { "type": "array", "description": "SHA256 hashes for each agent (cryptographic sacrifice ledger)" },
+          "sacrificeLog": { "type": "string", "description": "Sacrifice log in text format (agent_id hash)" },
+          "totalBytes": { "type": "number", "description": "Total bytes harvested" },
+          "cleanupReport": { "type": "object", "description": "Full cleanup report with timestamp, counts, and config" },
+          "errors": { "type": "array", "description": "Error messages" },
+          "elapsedMs": { "type": "number", "description": "Elapsed time in milliseconds" },
+          "summary": { "type": "string", "description": "Human-readable pruning summary" }
+        }
+      }
+    },
+    {
+      "type": "swarm-status",
+      "entryPoint": "./swarm-status.js",
+      "schema": {
+        "title": "Swarm Status",
+        "category": "utility",
+        "type": "swarm-status",
+        "icon": "bolt",
+        "description": "Real-time swarm telemetry — health checks, depth distribution, status codes, proxy pool status, and per-agent results.",
+        "parameters": {
+          "spawnManifest": { "type": "object", "inputType": "codearea", "required": false, "description": "Spawn manifest from swarm-spawn." },
+          "results": { "type": "array", "inputType": "codearea", "required": false, "description": "Results array from swarm-spawn." },
+          "auditSummary": { "type": "object", "inputType": "codearea", "required": false, "description": "Audit summary from swarm-spawn (.auditSummary output)." },
+          "harvest": { "type": "object", "inputType": "codearea", "required": false, "description": "Harvest summary from swarm-spawn (.harvest output)." },
+          "proxyStats": { "type": "array", "inputType": "codearea", "required": false, "description": "Proxy stats from swarm-spawn (.proxyStats output)." },
+          "agentId": { "type": "string", "inputType": "text", "required": false, "description": "Optional: focus on a specific agent ID." },
+          "logType": { "type": "string", "inputType": "select", "required": false, "options": ["all", "results", "audit", "harvest"], "default": "all", "description": "Which log types to include." }
+        },
+        "outputs": {
+          "success": { "type": "boolean", "description": "Whether status was retrieved" },
+          "events": { "type": "array", "description": "Telemetry events" },
+          "agentCount": { "type": "number", "description": "Number of agents" },
+          "totalEvents": { "type": "number", "description": "Total event count" },
+          "telemetry": { "type": "object", "description": "Full telemetry: agents, successRate, depthDistribution, statusDistribution, health checks, proxy summary" },
+          "errors": { "type": "array", "description": "Error messages" },
+          "summary": { "type": "string", "description": "Human-readable status summary" }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "name": "system-control",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "open-file.js",
+  "dependencies": {}
+}

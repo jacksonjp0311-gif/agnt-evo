@@ -1,0 +1,107 @@
+{
+  "plugins": [
+    {
+      "name": "claude-agent-plugin",
+      "version": "1.0.0",
+      "installedAt": "2026-06-17T13:21:28.683Z",
+      "enabled": true
+    },
+    {
+      "name": "github-plugin",
+      "version": "1.0.0",
+      "installedAt": "2026-06-17T13:21:53.236Z",
+      "enabled": true
+    },
+    {
+      "name": "asf-runtime-loop-tools",
+      "version": "local",
+      "installedAt": "2026-06-17T14:17:44.645Z",
+      "enabled": true
+    },
+    {
+      "name": "chemiframe",
+      "version": "1.0.0",
+      "installedAt": "2026-06-18T22:15:38.372Z",
+      "enabled": true
+    },
+    {
+      "name": "triadix-governance",
+      "version": "1.0.0",
+      "installedAt": "2026-06-18T22:15:41.544Z",
+      "enabled": true
+    },
+    {
+      "name": "fractal-swarm",
+      "version": "1.0.0",
+      "installedAt": "2026-06-18T22:15:43.849Z",
+      "enabled": true
+    },
+    {
+      "name": "triadix-ledger",
+      "version": "1.0.0",
+      "installedAt": "2026-06-18T22:15:46.737Z",
+      "enabled": true
+    },
+    {
+      "name": "open-url-toolkit",
+      "version": "1.0.0",
+      "installedAt": "2026-06-18T22:15:49.153Z",
+      "enabled": true
+    },
+    {
+      "name": "aetherscop-afm",
+      "version": "local",
+      "installedAt": "2026-06-19T11:48:27.032Z",
+      "enabled": true
+    },
+    {
+      "name": "system-control",
+      "version": "local",
+      "installedAt": "2026-06-19T12:59:51.832Z",
+      "enabled": true
+    },
+    {
+      "name": "agnt-connect",
+      "version": "local",
+      "installedAt": "2026-06-19T13:52:37.486Z",
+      "enabled": true
+    },
+    {
+      "name": "lssao-toolkit",
+      "version": "local",
+      "installedAt": "2026-06-19T17:07:25.026Z",
+      "enabled": true
+    },
+    {
+      "name": "coding-telemetry-feedback-net",
+      "version": "local",
+      "installedAt": "2026-06-21T03:24:35.263Z",
+      "enabled": true
+    },
+    {
+      "name": "ice-crawler",
+      "version": "1.0.0",
+      "installedAt": "2026-06-22T02:18:07.307Z",
+      "enabled": true
+    },
+    {
+      "name": "url-script-harvester",
+      "version": "1.0.0",
+      "installedAt": "2026-06-22T02:18:09.140Z",
+      "enabled": true
+    },
+    {
+      "name": "chat-actions-strip",
+      "version": "1.0.0",
+      "installedAt": "2026-06-22T02:18:13.897Z",
+      "enabled": true
+    },
+    {
+      "name": "neuralforge",
+      "version": "local",
+      "installedAt": "2026-06-22T02:27:15.748Z",
+      "enabled": true
+    }
+  ],
+  "userUninstalled": []
+}

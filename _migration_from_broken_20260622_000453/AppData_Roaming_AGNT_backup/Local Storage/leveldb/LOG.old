@@ -1,0 +1,6 @@
+2026/06/21-22:34:05.294 2d84 Reusing MANIFEST C:\Users\jacks\AppData\Roaming\AGNT\Local Storage\leveldb/MANIFEST-000001
+2026/06/21-22:34:05.309 2d84 Recovering log #943
+2026/06/21-22:34:05.310 2d84 Reusing old log C:\Users\jacks\AppData\Roaming\AGNT\Local Storage\leveldb/000943.log 
+2026/06/21-22:35:49.272 2e10 Level-0 table #947: started
+2026/06/21-22:35:49.279 2e10 Level-0 table #947: 16763 bytes OK
+2026/06/21-22:35:49.283 2e10 Delete type=0 #943

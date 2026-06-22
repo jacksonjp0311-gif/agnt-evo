@@ -1,0 +1,19 @@
+﻿ M frontend/src/store/app/aiProvider.js
+ M frontend/src/store/auth/appAuth.js
+ M frontend/src/views/Terminal/CenterPanel/screens/Chat/Chat.vue
+ D frontend/src/views/Terminal/CenterPanel/screens/Chat/components/OperationTimerPanel.vue
+ M frontend/src/views/Terminal/CenterPanel/screens/Skills/Skills.vue
+?? _current_code_fix_20260621_235437/
+?? _frontend_backup_20260621_232557/
+?? _publish/
+?? _sqlite3_package_restore_20260621_233339/
+?? _sqlite3_restore_rescue_20260621_233151/
+?? _stash_list_before_official_auto_install_20260621_233951.txt
+?? _stash_list_before_official_windows_20260621_233623.txt
+?? _status_before_official_auto_install_20260621_233951.txt
+?? _status_before_official_windows_20260621_233623.txt
+?? _temp-swarm-plugin-repo/
+?? backend/plugins/dev/aetherscop-afm/
+?? backend/plugins/dev/chemiframe/
+?? code-critic/
+?? neuralforge/

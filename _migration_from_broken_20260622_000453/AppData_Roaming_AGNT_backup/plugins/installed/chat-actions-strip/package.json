@@ -1,0 +1,7 @@
+{
+  "name": "chat-actions-strip",
+  "version": "1.0.0",
+  "description": "AGNT Chat Actions Strip: translucent, theme-aware action buttons (regenerate/copy/share/feedback) for chat messages.",
+  "type": "module",
+  "private": true
+}

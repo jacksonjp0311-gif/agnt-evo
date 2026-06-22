@@ -1,0 +1,52 @@
+{
+  "name": "coding-telemetry-feedback-net",
+  "version": "2.0.0",
+  "description": "Offline neural network code critic v2 — analyzes Python code quality using a code-aware transformer with 465-token vocabulary. Trained on 5000 labeled samples. Detects bugs, style, performance, security, maintainability, and pythonic issues. Runs 100% locally.",
+  "author": "AGNT User",
+  "icon": "brain",
+  "tools": [
+    {
+      "type": "analyze-code",
+      "entryPoint": "./analyze-code.js",
+      "schema": {
+        "title": "Code Critic v2",
+        "category": "action",
+        "type": "analyze-code",
+        "icon": "brain",
+        "description": "Analyze Python code quality using a local neural network with code-aware tokenization. Returns quality score, categorized issues (bugs/style/perf/security/maintainability/pythonic), refactoring suggestions, and positive notes. Runs 100% offline.",
+        "parameters": {
+          "code": {
+            "type": "string",
+            "inputType": "codearea",
+            "description": "Python source code to analyze",
+            "required": true
+          },
+          "filePath": {
+            "type": "string",
+            "inputType": "text",
+            "description": "Optional file path for context-aware analysis",
+            "required": false
+          },
+          "telemetry": {
+            "type": "string",
+            "inputType": "textarea",
+            "description": "Optional JSON telemetry: git diffs, edit counts, file age, etc.",
+            "required": false
+          }
+        },
+        "outputs": {
+          "quality_score": { "type": "number", "description": "Overall code quality 0.0-1.0" },
+          "quality_label": { "type": "string", "description": "Human-readable quality label" },
+          "confidence": { "type": "number", "description": "Model confidence 0.0-1.0" },
+          "issues": { "type": "string", "description": "JSON array of categorized issues" },
+          "suggestions": { "type": "string", "description": "JSON array of ranked suggestions" },
+          "positive_notes": { "type": "string", "description": "JSON array of positive observations" },
+          "feedback_text": { "type": "string", "description": "Full human-readable feedback report" },
+          "inference_time_ms": { "type": "number", "description": "Inference time in ms" },
+          "model_version": { "type": "string", "description": "Model version used (v1 or v2)" },
+          "error": { "type": "string", "description": "Error message if any" }
+        }
+      }
+    }
+  ]
+}

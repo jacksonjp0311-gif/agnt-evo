@@ -1,0 +1,8 @@
+{
+  "name": "triadix-governance",
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "triadix-ledger": "file:../triadix-ledger"
+  }
+}
