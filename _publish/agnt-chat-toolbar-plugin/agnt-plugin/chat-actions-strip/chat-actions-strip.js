@@ -10,7 +10,7 @@ function escHtml(s) {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/\"/g, '&quot;')
+    .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 }
 
@@ -31,13 +31,19 @@ class ChatActionsStrip {
 
   async execute(params) {
     try {
-      const content = String(params?.content ?? '');
-      const regeneratePrompt = String(params?.regeneratePrompt ?? 'Regenerate your last response.');
-      const shareWebhookUrl = normalizeHttpUrl(params?.shareWebhookUrl);
-      const feedbackWebhookUrl = normalizeHttpUrl(params?.feedbackWebhookUrl);
-      const showFeedback = asBool(params?.showFeedback ?? true);
-      const density = String(params?.density ?? 'compact') === 'comfortable' ? 'comfortable' : 'compact';
-      const hint = String(params?.hint ?? '').trim();
+      // AGNT execute endpoint wraps body in { args: {...} }.
+      // Support both { args: {...} } and flat {...} for robustness.
+      const args = (params && typeof params === 'object' && 'args' in params && params.args && typeof params.args === 'object')
+        ? params.args
+        : params || {};
+
+      const content = String(args?.content ?? '');
+      const regeneratePrompt = String(args?.regeneratePrompt ?? 'Regenerate your last response.');
+      const shareWebhookUrl = normalizeHttpUrl(args?.shareWebhookUrl);
+      const feedbackWebhookUrl = normalizeHttpUrl(args?.feedbackWebhookUrl);
+      const showFeedback = asBool(args?.showFeedback ?? true);
+      const density = String(args?.density ?? 'compact') === 'comfortable' ? 'comfortable' : 'compact';
+      const hint = String(args?.hint ?? '').trim();
 
       // Unique IDs so multiple strips can exist in one chat.
       const uid = 'agnt_actions_' + Math.random().toString(36).slice(2, 10);
@@ -78,6 +84,7 @@ class ChatActionsStrip {
   <span class="status" aria-live="polite"></span>
 
   <style>
+    /* Theme-aware translucent strip that darkens on hover */
     #${uid}_wrap.agntChatActionsWrap{
       width: 100%;
       display: flex;
@@ -104,6 +111,7 @@ class ChatActionsStrip {
       padding: ${density === 'comfortable' ? '10px 12px' : '8px 10px'};
       border-radius: 14px;
 
+      /* Futuristic: translucent glass + subtle gradient edge */
       background: linear-gradient(180deg,
         rgba(var(--bg-rgb), calc(var(--strip-a) + 0.04)),
         rgba(var(--bg-rgb), var(--strip-a))
@@ -121,6 +129,7 @@ class ChatActionsStrip {
       overflow: hidden;
     }
 
+    /* Neon hairline sweep */
     #${uid}.agntChatActions::after{
       content:"";
       position:absolute;
@@ -189,6 +198,7 @@ class ChatActionsStrip {
     #${uid} .btn[data-accent="violet"]{ --accent: ${palette.violet}; }
 
     #${uid} .btn[data-accent]:hover{
+      /* soft accent tint on hover */
       color: color-mix(in srgb, white 70%, var(--accent) 30%);
     }
 
@@ -247,10 +257,12 @@ class ChatActionsStrip {
 
       const isApiPath = String(url).startsWith('/api');
 
+      // For AGNT internal API calls, use the global SDK (token is proxied securely).
       if (isApiPath && window.agnt && typeof window.agnt.fetch === 'function') {
         return await window.agnt.fetch(url, { method: 'POST', body });
       }
 
+      // For external webhooks, use normal fetch.
       const r = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -288,6 +300,7 @@ class ChatActionsStrip {
             return;
           }
 
+          // Fallback: attempt Web Share, else copy content.
           if (navigator.share) {
             await navigator.share({ title: 'AGNT Output', text: (content || regenPrompt).slice(0, 4000) });
             setStatus('Shared');
