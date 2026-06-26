@@ -47,6 +47,18 @@ class ProcessWorker extends EventEmitter {
         });
       });
 
+      // NeuralForge realtime telemetry hook — non-blocking, best-effort
+      // Writes execution events to NeuralForge's cold-storage JSONL ledger.
+      // Failures here must NEVER affect workflow execution.
+      engine.on('workflowCompleted', async (eventData) => {
+        try {
+          const { NeuralForgeTelemetry } = await import('./NeuralForgeTelemetry.js');
+          await NeuralForgeTelemetry.record(eventData);
+        } catch (e) {
+          // Silently ignore — telemetry must never break workflows
+        }
+      });
+
       // Add the engine to activeWorkflows BEFORE setting up listeners
       // This prevents a race condition where webhooks can arrive before
       // the workflow is registered in activeWorkflows

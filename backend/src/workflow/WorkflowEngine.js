@@ -412,6 +412,22 @@ class WorkflowEngine extends EventEmitter {
       // Update the workflow execution with the total credits used
       await dbRunWithRetry(() => ExecutionModel.update(executionId, Object.keys(this.errors).length > 0 ? 'error' : 'completed', executionLog, totalCreditsUsed));
 
+      // Emit workflowCompleted for telemetry listeners (e.g., NeuralForge realtime hook)
+      // This is a non-blocking event — listeners cannot affect workflow execution.
+      try {
+        this.emit('workflowCompleted', {
+          executionId,
+          workflowId: this.workflowId,
+          workflowName: this.workflow.name,
+          status: Object.keys(this.errors).length > 0 ? 'error' : 'completed',
+          creditsUsed: totalCreditsUsed,
+          timestamp: new Date().toISOString(),
+        });
+      } catch (emitError) {
+        // Never let telemetry break workflow execution
+        console.warn('[WorkflowEngine] workflowCompleted emit error:', emitError.message);
+      }
+
       return {
         success: Object.keys(this.errors).length === 0,
         outputs: this.outputs,
@@ -424,6 +440,22 @@ class WorkflowEngine extends EventEmitter {
       totalCreditsUsed = await ExecutionModel.getTotalCreditsUsed(executionId);
       await dbRunWithRetry(() => ExecutionModel.update(executionId, 'error', executionLog, totalCreditsUsed));
       await this._updateWorkflowStatus('error');
+
+      // Emit workflowCompleted for telemetry (even on error)
+      try {
+        this.emit('workflowCompleted', {
+          executionId,
+          workflowId: this.workflowId,
+          workflowName: this.workflow.name,
+          status: 'error',
+          error: error.message,
+          creditsUsed: totalCreditsUsed,
+          timestamp: new Date().toISOString(),
+        });
+      } catch (emitError) {
+        console.warn('[WorkflowEngine] workflowCompleted emit error:', emitError.message);
+      }
+
       return {
         success: false,
         outputs: {},
