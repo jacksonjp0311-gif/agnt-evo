@@ -90,6 +90,9 @@ backend\tests\providers\results\*.json
 # MCP config (contains sensitive data)
 *mcp.json
 
+# PowerShell temp scripts
+_*.ps1
+
 # Trajectory data (generated at runtime, not committed)
 .trajectory/
 
