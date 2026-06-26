@@ -5,7 +5,14 @@ frontend\node_modules\
 backend\node_modules\
 
 # Plugin development (moved to AGNT-PLUGINS repo - https://github.com/jacksonjp0311-gif/AGNT-PLUGINS)
-backend\plugins\dev\
+# Evolution plugins (tracked in AGNT-PLUGINS, also here for dev)
+# backend\plugins\dev\*
+!backend\plugins\dev\ecosystem-telemetry-hub\
+!backend\plugins\dev\agent-trajectory-log\
+!backend\plugins\dev\evolution-sync-tool\
+!backend\plugins\dev\cross-system-autevolver\
+  # commented out to allow evolution plugin tracking
+
 
 # Plugin builds (generated during build, not stored in git)
 backend\plugins\plugin-builds\
