@@ -8,6 +8,11 @@ import db from '../../../models/database/index.js';
 class AgentApplicator {
   /**
    * Apply a specific insight to its target agent.
+   *
+   * Orchestrator-chat and goal-extracted insights are stored with
+   * target_id=null intentionally — they're system-wide, not tied to a
+   * specific agent. We route those to the orchestrator-scoped memory
+   * (agent_id='orchestrator') rather than failing.
    */
   static async apply(insightId, userId, provider = null, model = null) {
     const insight = await InsightModel.findOne(insightId);
@@ -17,13 +22,19 @@ class AgentApplicator {
     if (insight.target_type !== 'agent') {
       throw new Error('Insight does not target an agent');
     }
-    if (!insight.target_id) {
-      throw new Error('No target agent specified');
-    }
 
-    const agent = await AgentModel.findOne(insight.target_id);
-    if (!agent) {
-      throw new Error('Target agent not found');
+    let agent = null;
+    let isOrchestratorScope = false;
+    if (insight.target_id) {
+      agent = await AgentModel.findOne(insight.target_id);
+      if (!agent) {
+        throw new Error('Target agent not found');
+      }
+    } else {
+      // Synthesize a stand-in "agent" record so the per-category handlers
+      // can write to AgentMemoryModel using the canonical 'orchestrator' id.
+      agent = { id: 'orchestrator', assignedSkills: [], assignedTools: [], assignedWorkflows: [], created_by: userId };
+      isOrchestratorScope = true;
     }
 
     let result;
@@ -31,8 +42,20 @@ class AgentApplicator {
       case 'prompt_refinement':
         result = await this._applyPromptRefinement(agent, insight, userId);
         break;
+      case 'memory':
+        // Memory-category insights about an agent become an AgentMemoryModel
+        // 'fact' row — distinguished from prompt_guidance so the memory system
+        // can rank/inject them differently.
+        result = await this._applyMemory(agent, insight, userId);
+        break;
       case 'skill_recommendation':
-        result = await this._applySkillRecommendation(agent, insight, userId);
+        if (isOrchestratorScope) {
+          // Can't assign a skill to "the orchestrator" — record as a memory cue instead.
+          result = await this._applyPromptRefinement(agent, insight, userId);
+          if (result.applied) result.type = 'skill_recommendation_recorded';
+        } else {
+          result = await this._applySkillRecommendation(agent, insight, userId);
+        }
         break;
       case 'tool_preference':
         result = await this._applyToolPreference(agent, insight, userId);
@@ -42,9 +65,10 @@ class AgentApplicator {
     }
 
     if (result.applied) {
-      await InsightModel.updateStatus(insightId, 'applied', result);
-      // Increment agent's insight_version
-      await this._incrementInsightVersion(insight.target_id);
+      await InsightModel.updateStatus(insightId, 'applied', { ...result, orchestratorScope: isOrchestratorScope });
+      if (!isOrchestratorScope && insight.target_id) {
+        await this._incrementInsightVersion(insight.target_id);
+      }
     }
 
     return result;
@@ -75,6 +99,38 @@ class AgentApplicator {
         applied: true,
         type: 'prompt_refinement',
         note: 'Stored as dynamic memory — will be injected in future conversations',
+      };
+    } catch (error) {
+      return { applied: false, reason: error.message };
+    }
+  }
+
+  /**
+   * Apply a memory-category insight — store as a general fact about the user
+   * or context. Same storage layer as prompt_refinement but a different
+   * memoryType so the retrieval system can rank them independently.
+   */
+  static async _applyMemory(agent, insight, userId) {
+    try {
+      const AgentMemoryModel = (await import('../../../models/AgentMemoryModel.js')).default;
+      const content = `${insight.title}: ${insight.description}`;
+
+      const existing = await AgentMemoryModel.findDuplicate(agent.id, content);
+      if (existing) {
+        await AgentMemoryModel.update(existing.id, { relevanceScore: Math.min(2.0, existing.relevance_score + 0.2) });
+      } else {
+        await AgentMemoryModel.create({
+          agentId: agent.id,
+          userId,
+          memoryType: 'fact',
+          content,
+        });
+      }
+
+      return {
+        applied: true,
+        type: 'memory_stored',
+        note: 'Stored as agent fact — surfaces via memory recall in future conversations',
       };
     } catch (error) {
       return { applied: false, reason: error.message };

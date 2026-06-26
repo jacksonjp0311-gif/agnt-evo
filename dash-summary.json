@@ -1,0 +1,28 @@
+{
+  "repo": "C:\\Users\\jacks\\OneDrive\\Desktop\\agnt-evo\\backend",
+  "mode": "full",
+  "branch": "main",
+  "lastCommit": {
+    "sha": "71f2313",
+    "subject": "chore: extract plugins to standalone AGNT-PLUGINS repo",
+    "relative": "2 hours ago"
+  },
+  "stack": [
+    "JavaScript/TypeScript",
+    "Python"
+  ],
+  "commands": {},
+  "totalFiles": 1091,
+  "totalFindings": 195,
+  "bySeverity": {
+    "HIGH": 74,
+    "MED": 26,
+    "LOW": 95
+  },
+  "byCategory": {
+    "Correctness / Bugs": 56,
+    "Security": 18,
+    "Performance": 26,
+    "Tech Debt": 95
+  }
+}

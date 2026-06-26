@@ -1,0 +1,14 @@
+chore: extract plugins to standalone AGNT-PLUGINS repo
+
+Moved 12 custom plugins to https://github.com/jacksonjp0311-gif/AGNT-PLUGINS:
+- aetherscop-afm, atlas-cloud, bankr-plugin, chat-actions-strip
+- chemiframe, improve, neuralforge, operation-timer
+- plaid-plugin, polymarket-plugin, triadix-governance, triadix-ledger
+
+Cleaned up standalone projects already in own repos:
+- neuralforge, agnt-auditor, code-critic
+- migration artifacts (_migration_*, _plugin_*, _publish)
+
+Updated .gitignore to exclude dev/ folder and legacy artifacts.
+AGNT core repo is now clean — safe to pull upstream without conflicts.
+Plugins can be developed independently and symlinked/copied to installed/ for testing.

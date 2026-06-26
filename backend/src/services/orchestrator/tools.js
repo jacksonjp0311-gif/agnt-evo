@@ -13,6 +13,7 @@ import { getWorkflowToolSchemas, executeWorkflowTool } from './workflowTools.js'
 import { getCodeToolSchemas, executeCodeFunction } from './codeTools.js';
 import { getToolForgeToolSchemas, executeToolForgeTool } from './toolForgeTools.js';
 import { getWidgetToolSchemas, executeWidgetTool } from './widgetTools.js';
+import { getTutorialToolSchemas, executeTutorialTool } from './tutorialTools.js';
 import AuthManager from '../auth/AuthManager.js';
 import CodexAuthManager from '../auth/CodexAuthManager.js';
 import CodexCliService from '../ai/CodexCliService.js';
@@ -22,6 +23,7 @@ import ParameterResolver from '../../workflow/ParameterResolver.js';
 import { saveBase64Image } from '../ImageStorage.js';
 import { createLlmClient } from '../ai/LlmService.js';
 import { createLlmAdapter } from './llmAdapters.js';
+import { broadcast, RealtimeEvents } from '../../utils/realtimeSync.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -166,25 +168,37 @@ export const TOOLS = {
       function: {
         name: 'execute_shell_command',
         description:
-          'Executes a shell command in a specified directory. Useful for running build tools, package managers (like npm, pip), or other system commands. Defaults to the workspace directory.',
+          `Executes a shell command in a specified directory. Useful for running build tools, package managers (like npm, pip), or other system commands. Defaults to the workspace directory.
+
+The command runs in the OS-native shell — cmd.exe on Windows, /bin/sh on macOS/Linux. The EXECUTION ENVIRONMENT section of the system prompt lists the active shell and its syntax rules; follow them. Common pitfalls:
+- One logical command per call. Do NOT embed literal newlines inside a single command string on Windows cmd.exe — they will be mangled and stdout will come back empty. Chain with the shell's operator (&& / & / ;) instead.
+- For multi-line scripts (Python, Node, shell), write the script to a file first with write_file, then execute the file. Avoid passing multi-line code via -c "..." on Windows.
+- If stdout is empty but success is true, the command likely failed to parse in the shell — re-check the syntax against the EXECUTION ENVIRONMENT rules before retrying.`,
         parameters: {
           type: 'object',
           properties: {
             command: {
               type: 'string',
-              description: "The shell command to execute (e.g., 'npm install', 'python --version').",
+              description:
+                "The shell command to execute (e.g., 'npm install', 'python --version'). Must be valid syntax for the host shell (cmd.exe on Windows, /bin/sh on POSIX) — see EXECUTION ENVIRONMENT in the system prompt.",
             },
             cwd: {
               type: 'string',
               description: 'The working directory from which to run the command. Defaults to the workspace directory. For npm install, always use the workspace.',
               default: '.',
             },
+            timeoutMs: {
+              type: 'number',
+              default: 120000,
+              description:
+                'Max wall-clock time in milliseconds before the process tree is force-killed. Default 120000 (2 min). Pass 0 to disable the timeout — use this for long-running background work, ALWAYS combined with _executeAsync: true so the user keeps a Stop button. For finite long jobs (big builds, training runs, gauntlets), pass an explicit number (e.g. 3600000 for 1 hour).',
+            },
           },
           required: ['command'],
         },
       },
     },
-    execute: async ({ command, cwd = '.' }, authToken) => {
+    execute: async ({ command, cwd = '.', timeoutMs, timeout }, authToken) => {
       if (!command) {
         return JSON.stringify({ success: false, error: 'Command is required.' });
       }
@@ -193,6 +207,20 @@ export const TOOLS = {
       if (cwd.includes('..')) {
         return JSON.stringify({ success: false, error: "Relative paths with '..' are not allowed in cwd." });
       }
+
+      // Accept `timeout` as an alias for `timeoutMs`. LLMs reach for `timeout`
+      // by reflex (every other SDK calls it that), and silently dropping it is
+      // the exact footgun this fix is meant to eliminate. `timeoutMs` wins if
+      // both are present.
+      const rawTimeout = timeoutMs !== undefined ? timeoutMs : timeout;
+      // Normalize: undefined → 120000, 0 / negative / non-numeric → none
+      const parsedTimeout = Number(rawTimeout);
+      const effectiveTimeoutMs =
+        rawTimeout === undefined
+          ? 120000
+          : Number.isFinite(parsedTimeout) && parsedTimeout > 0
+            ? parsedTimeout
+            : 0;
 
       // Resolve workspace root as default cwd (cached import)
       let resolvedCwd = cwd;
@@ -219,7 +247,10 @@ export const TOOLS = {
         });
       }
 
-      console.log(`Tool call: execute_shell_command with command: "${command}" in directory: "${resolvedCwd}"`);
+      console.log(
+        `Tool call: execute_shell_command with command: "${command}" in directory: "${resolvedCwd}"` +
+          ` (timeoutMs=${effectiveTimeoutMs || 'none'})`
+      );
 
       return new Promise((resolve) => {
         // Set NODE_PATH so spawned scripts can find workspace packages
@@ -237,47 +268,114 @@ export const TOOLS = {
           }
           env.AGNT_AUTH_TOKEN = token;
         }
+        // Force Python to emit UTF-8 on stdout/stderr regardless of the host
+        // codepage. Without this, Windows Python writes CP1252/CP437, which the
+        // UTF-8 decoder below would either mangle or silently drop. Harmless on
+        // POSIX where UTF-8 is already the default.
+        if (!env.PYTHONIOENCODING) env.PYTHONIOENCODING = 'utf-8';
+        if (!env.PYTHONUTF8) env.PYTHONUTF8 = '1';
 
-        // Use shell: true for convenience, which allows using shell syntax like '&&', '|', etc.
+        // shell: true gives us '&&'/'|'/etc., but on Windows it routes through
+        // cmd.exe and on POSIX through /bin/sh — both of which spawn the real
+        // workload as a grandchild. We deliberately omit spawn's `timeout`
+        // option here: when it fires, Node only signals the top of the tree
+        // (cmd.exe / sh), leaving the actual script orphaned on Windows and
+        // potentially on POSIX too. We implement timeout ourselves below with a
+        // platform-aware tree kill.
         const childProcess = spawn(command, {
           shell: true,
           cwd: resolvedCwd,
-          timeout: 120000, // 2 minutes, as installs can be slow
           env,
         });
 
-        let stdout = '';
-        let stderr = '';
+        // Accumulate raw bytes, decode at the end. Per-chunk .toString() can
+        // split a multi-byte UTF-8 sequence across chunk boundaries and drop
+        // bytes; Windows native programs may also emit OS-codepage text that
+        // isn't valid UTF-8. We try strict UTF-8 first, fall back to latin1
+        // (a lossless 1-byte-per-codepoint mapping that survives CP1252/CP437
+        // text without producing empty output). See decodeStream() below.
+        /** @type {Buffer[]} */
+        const stdoutChunks = [];
+        /** @type {Buffer[]} */
+        const stderrChunks = [];
         let timedOut = false;
+        let timeoutId = null;
+
+        const decodeStream = (chunks) => {
+          if (chunks.length === 0) return '';
+          const buf = Buffer.concat(chunks);
+          try {
+            // fatal: true throws on invalid UTF-8 instead of inserting U+FFFD
+            return new TextDecoder('utf-8', { fatal: true }).decode(buf);
+          } catch (_) {
+            // Lossless byte→codepoint mapping. Better than '' for non-UTF-8
+            // output; the LLM can still see what the program wrote.
+            return buf.toString('latin1');
+          }
+        };
+
+        const killTree = () => {
+          const pid = childProcess.pid;
+          if (!pid) return;
+          if (process.platform === 'win32') {
+            // taskkill /T walks parent→child by PID and terminates the whole
+            // tree; /F is force. Without /T, cmd.exe dies and python.exe / node.exe
+            // grandchildren keep running as orphans.
+            try {
+              spawn('taskkill', ['/pid', String(pid), '/T', '/F'], {
+                windowsHide: true,
+                stdio: 'ignore',
+              });
+            } catch (_) {
+              try { childProcess.kill('SIGKILL'); } catch (__) {}
+            }
+          } else {
+            try { childProcess.kill('SIGTERM'); } catch (_) {}
+            // Escalate if the child ignores SIGTERM. unref so this timer
+            // never keeps the event loop alive past process exit.
+            const escalate = setTimeout(() => {
+              try { childProcess.kill('SIGKILL'); } catch (_) {}
+            }, 5000);
+            if (typeof escalate.unref === 'function') escalate.unref();
+          }
+        };
+
+        if (effectiveTimeoutMs > 0) {
+          timeoutId = setTimeout(() => {
+            timedOut = true;
+            killTree();
+          }, effectiveTimeoutMs);
+        }
 
         childProcess.stdout.on('data', (data) => {
-          stdout += data.toString();
+          stdoutChunks.push(Buffer.isBuffer(data) ? data : Buffer.from(data));
         });
 
         childProcess.stderr.on('data', (data) => {
-          stderr += data.toString();
-        });
-
-        childProcess.on('timeout', () => {
-          timedOut = true;
-          childProcess.kill('SIGTERM');
+          stderrChunks.push(Buffer.isBuffer(data) ? data : Buffer.from(data));
         });
 
         childProcess.on('error', (err) => {
+          if (timeoutId) clearTimeout(timeoutId);
           console.error(`Failed to start shell command: ${command}`, err);
           resolve(JSON.stringify({ success: false, command, cwd, error: `Failed to start process: ${err.message}` }));
         });
 
         childProcess.on('close', (code, signal) => {
+          if (timeoutId) clearTimeout(timeoutId);
+          const stdout = decodeStream(stdoutChunks);
+          const stderr = decodeStream(stderrChunks);
           if (timedOut) {
+            const secs = Math.round(effectiveTimeoutMs / 1000);
             resolve(
               JSON.stringify({
                 success: false,
+                timedOut: true,
                 command,
                 cwd,
                 stdout: stdout.trim(),
                 stderr: stderr.trim(),
-                error: 'Command execution timed out after 120 seconds and was terminated.',
+                error: `Command execution timed out after ${secs}s and the process tree was terminated. To allow longer runs pass timeoutMs explicitly, or for indefinite background work use _executeAsync: true together with timeoutMs: 0 (the Stop button remains the kill switch).`,
               })
             );
           } else if (code === 0) {
@@ -1171,12 +1269,18 @@ export const TOOLS = {
               default: 'utf8',
               description: "File encoding (e.g., 'utf8', 'base64') for read/write operations.",
             },
+            timeoutMs: {
+              type: 'number',
+              default: 60000,
+              description:
+                "Max wall-clock time in milliseconds before the process tree is force-killed. Only applies to operation: 'execute'. Default 60000 (60s). Pass 0 to disable the timeout — use this for long-running background work, ALWAYS combined with _executeAsync: true so the user keeps a Stop button. For finite long jobs, pass an explicit number (e.g. 3600000 for 1 hour).",
+            },
           },
           required: ['operation', 'path'],
         },
       },
     },
-    execute: async ({ operation, path: filePath, content, destination, encoding = 'utf8', args = [] }, authToken, context) => {
+    execute: async ({ operation, path: filePath, content, destination, encoding = 'utf8', args = [], timeoutMs, timeout }, authToken, context) => {
       console.log(`Tool call: executeFileOperations with operation: ${operation}, path: ${filePath}, args: ${args}`);
 
       if (!operation || !filePath) {
@@ -1360,10 +1464,54 @@ export const TOOLS = {
             childEnv.AGNT_AUTH_TOKEN = token;
           }
 
-          const childProcess = spawn(commandToRun, finalSpawnArgs, { timeout: 60000, env: childEnv });
+          // Accept `timeout` as an alias for `timeoutMs` (LLM reflex; see
+          // execute_shell_command). Normalize: undefined → 60000,
+          // 0 / negative / non-numeric → none. See execute_shell_command for
+          // the rationale on rolling our own timeout/kill instead of spawn's
+          // `timeout` option — same tree-orphan problem applies to any child
+          // that re-spawns (cmd.exe, sh, powershell.exe).
+          const rawTimeout = timeoutMs !== undefined ? timeoutMs : timeout;
+          const parsedTimeout = Number(rawTimeout);
+          const effectiveTimeoutMs =
+            rawTimeout === undefined
+              ? 60000
+              : Number.isFinite(parsedTimeout) && parsedTimeout > 0
+                ? parsedTimeout
+                : 0;
+
+          const childProcess = spawn(commandToRun, finalSpawnArgs, { env: childEnv });
           let stdout = '';
           let stderr = '';
           let timedOut = false;
+          let timeoutId = null;
+
+          const killTree = () => {
+            const pid = childProcess.pid;
+            if (!pid) return;
+            if (process.platform === 'win32') {
+              try {
+                spawn('taskkill', ['/pid', String(pid), '/T', '/F'], {
+                  windowsHide: true,
+                  stdio: 'ignore',
+                });
+              } catch (_) {
+                try { childProcess.kill('SIGKILL'); } catch (__) {}
+              }
+            } else {
+              try { childProcess.kill('SIGTERM'); } catch (_) {}
+              const escalate = setTimeout(() => {
+                try { childProcess.kill('SIGKILL'); } catch (_) {}
+              }, 5000);
+              if (typeof escalate.unref === 'function') escalate.unref();
+            }
+          };
+
+          if (effectiveTimeoutMs > 0) {
+            timeoutId = setTimeout(() => {
+              timedOut = true;
+              killTree();
+            }, effectiveTimeoutMs);
+          }
 
           childProcess.stdout.on('data', (data) => {
             stdout += data.toString();
@@ -1373,14 +1521,9 @@ export const TOOLS = {
             stderr += data.toString();
           });
 
-          childProcess.on('timeout', () => {
-            timedOut = true;
-            childProcess.kill('SIGTERM'); // Send SIGTERM on timeout
-            // The 'close' event will handle the resolve with timeout context
-          });
-
           childProcess.on('error', (err) => {
             // This handles errors in spawning the process itself (e.g., command not found)
+            if (timeoutId) clearTimeout(timeoutId);
             console.error(
               `Failed to start process for command '${commandToRun}' with args '${JSON.stringify(finalSpawnArgs)}' (original file: '${filePath}'):`,
               err
@@ -1397,16 +1540,19 @@ export const TOOLS = {
           });
 
           childProcess.on('close', (code, signal) => {
+            if (timeoutId) clearTimeout(timeoutId);
             if (timedOut) {
+              const secs = Math.round(effectiveTimeoutMs / 1000);
               doResolve(
                 JSON.stringify({
                   success: false,
+                  timedOut: true,
                   operation,
                   path: filePath,
                   args: execArgs,
                   stdout: stdout.trim(),
                   stderr: stderr.trim(),
-                  error: 'File execution timed out after 60 seconds and was terminated.', // Updated timeout message
+                  error: `File execution timed out after ${secs}s and the process tree was terminated. To allow longer runs pass timeoutMs explicitly, or for indefinite background work use _executeAsync: true together with timeoutMs: 0 (the Stop button remains the kill switch).`,
                 })
               );
             } else if (code === 0) {
@@ -2563,7 +2709,12 @@ export const TOOLS = {
             },
             provider_data: {
               type: 'object',
-              description: "A JSON object representing the provider's configuration. Used for 'create_provider' and 'update_provider'.",
+              description:
+                "Provider configuration JSON for 'create_provider' / 'update_provider'. " +
+                "Field names MUST be camelCase (the cloud API does not accept snake_case and will silently drop unknown keys, then fail NOT NULL on connection_type with a 500). " +
+                "Common fields: id, name, icon, categories (array of strings), connectionType ('oauth' | 'apikey'), instructions, customPrompt, isGlobal (admin only). " +
+                "OAuth-only fields: redirectUri, scope, authUrl, authParams, tokenUrl, tokenParams, tokenHeaders, refreshUrl, refreshParams, refreshHeaders, providerCode. " +
+                "Do NOT send: connection_type, custom_prompt, is_global, supports_refresh — those keys are ignored.",
               additionalProperties: true,
             },
             api_key_string: {
@@ -2603,6 +2754,7 @@ export const TOOLS = {
               return JSON.stringify({ success: false, error: "provider_data (object) is required for 'create_provider'." });
             }
             result = await agnt.auth.createProvider(provider_data);
+            broadcast(RealtimeEvents.PROVIDER_CREATED, { providerId: provider_data.id });
             break;
           case 'update_provider':
             if (!provider_id) {
@@ -2612,12 +2764,14 @@ export const TOOLS = {
               return JSON.stringify({ success: false, error: "provider_data (object) is required for 'update_provider'." });
             }
             result = await agnt.auth.updateProvider(provider_id, provider_data);
+            broadcast(RealtimeEvents.PROVIDER_UPDATED, { providerId: provider_id });
             break;
           case 'delete_provider':
             if (!provider_id) {
               return JSON.stringify({ success: false, error: "provider_id is required for 'delete_provider'." });
             }
             result = await agnt.auth.deleteProvider(provider_id);
+            broadcast(RealtimeEvents.PROVIDER_DELETED, { providerId: provider_id });
             break;
           case 'get_provider_details':
             if (!provider_id) {
@@ -4115,6 +4269,7 @@ export async function getAvailableToolSchemas({ asyncEnabled = true } = {}) {
   const codeToolSchemas = getCodeToolSchemas();
   const toolForgeToolSchemas = getToolForgeToolSchemas();
   const widgetToolSchemas = getWidgetToolSchemas();
+  const tutorialToolSchemas = getTutorialToolSchemas();
   const registryToolSchemas = toolRegistry.getOpenApiSchemas();
   const pluginToolSchemas = toolRegistry.getPluginOpenApiSchemas();
 
@@ -4140,6 +4295,7 @@ export async function getAvailableToolSchemas({ asyncEnabled = true } = {}) {
     ...codeToolSchemas,
     ...toolForgeToolSchemas,
     ...widgetToolSchemas,
+    ...tutorialToolSchemas,
     ...registryToolSchemas,
     ...pluginToolSchemas,
     ...mcpToolSchemas,
@@ -4166,7 +4322,7 @@ export async function getAvailableToolSchemas({ asyncEnabled = true } = {}) {
   }
 
   console.log(
-    `[Orchestrator] Available tools: ${uniqueSchemas.length} (${nativeToolSchemas.length} native, ${agentToolSchemas.length} agent, ${workflowToolSchemas.length} workflow, ${goalToolSchemas.length} goal, ${codeToolSchemas.length} code, ${toolForgeToolSchemas.length} tool-forge, ${widgetToolSchemas.length} widget, ${registryToolSchemas.length} registry, ${pluginToolSchemas.length} plugins, ${mcpToolSchemas.length} mcp)`
+    `[Orchestrator] Available tools: ${uniqueSchemas.length} (${nativeToolSchemas.length} native, ${agentToolSchemas.length} agent, ${workflowToolSchemas.length} workflow, ${goalToolSchemas.length} goal, ${codeToolSchemas.length} code, ${toolForgeToolSchemas.length} tool-forge, ${widgetToolSchemas.length} widget, ${tutorialToolSchemas.length} tutorial, ${registryToolSchemas.length} registry, ${pluginToolSchemas.length} plugins, ${mcpToolSchemas.length} mcp)`
   );
 
   return uniqueSchemas;
@@ -4348,6 +4504,13 @@ export async function executeTool(toolName, args, authToken, context) {
     if (widgetToolNames.has(toolName)) {
       console.log(`Executing widget tool: ${toolName}`);
       return await executeWidgetTool(toolName, resolvedArgs, authToken, context);
+    }
+
+    const tutorialToolNames = new Set(getTutorialToolSchemas().map(s => s.function.name));
+    if (tutorialToolNames.has(toolName)) {
+      console.log(`Executing tutorial tool: ${toolName}`);
+      const result = await executeTutorialTool(toolName, resolvedArgs, authToken, context);
+      return JSON.stringify(result);
     }
 
     const registryToolName = toolName.replace(/_/g, '-');

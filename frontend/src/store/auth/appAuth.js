@@ -8,6 +8,21 @@ import { TTL } from '../_utils/freshnessConfig.js';
 // CLI provider IDs that use local filesystem auth
 const CLI_PROVIDER_IDS = ['openai-codex', 'claude-code', 'gemini-cli'];
 
+// Tell the local backend a provider changed so it can fan a Socket.IO
+// event out to every other connected client (other tabs / chat panels)
+// — same-tab refresh is already covered by the forceRefresh dispatch.
+// Fire-and-forget; logs but never throws.
+function notifyLocalBackendProviderChanged(event, providerId) {
+  const token = localStorage.getItem('token');
+  axios.post(
+    `${API_CONFIG.BASE_URL}/auth/providers/notify-changed`,
+    { event, providerId },
+    { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+  ).catch((err) => {
+    console.warn('[appAuth] notify-changed failed:', err?.message);
+  });
+}
+
 // In-flight promise for deduplicating concurrent fetchConnectedApps calls.
 // (withFreshness also de-dupes concurrent callers, so this is a redundant
 // safety net for any legacy callers that bypass the wrapper.)
@@ -32,6 +47,22 @@ const mutations = {
   },
   SET_ALL_PROVIDERS(state, providers) {
     state.allProviders = providers;
+  },
+  PATCH_PROVIDER(state, { id, patch }) {
+    const idx = state.allProviders.findIndex((p) => p.id === id);
+    if (idx === -1) return;
+    // Merge: spread existing first, then apply patch fields on top so the
+    // edited values win without dropping fields the patch didn't include.
+    // Replace the array reference so reactive consumers re-evaluate.
+    const merged = { ...state.allProviders[idx], ...patch };
+    state.allProviders = [
+      ...state.allProviders.slice(0, idx),
+      merged,
+      ...state.allProviders.slice(idx + 1),
+    ];
+  },
+  REMOVE_PROVIDER(state, id) {
+    state.allProviders = state.allProviders.filter((p) => p.id !== id);
   },
   SET_CONNECTION_HEALTH(state, health) {
     state.connectionHealth = health;
@@ -74,27 +105,54 @@ const mutations = {
 };
 
 const actions = {
-  fetchConnectedApps: withFreshness('appAuth.fetchConnectedApps', async ({ commit }) => {
+  fetchConnectedApps: withFreshness('appAuth.fetchConnectedApps', async ({ commit, state }) => {
     // Deduplicate concurrent calls - return existing in-flight promise
     if (_fetchConnectedAppsPromise) return _fetchConnectedAppsPromise;
+
+    // On cold start (no providers yet), commit the local-only set early so the
+    // UI lights up fast. On refresh polls, we already have providers in Vuex —
+    // committing the partial set would briefly drop remote-only providers,
+    // flipping hasConnectedAIProvider to false, flashing "no provider connected"
+    // in the chat, and triggering watch(connectedApps) cascades. Hold the
+    // partial set and only commit the final merged result on refreshes.
+    const isColdStart = !state.connectedApps || state.connectedApps.length === 0;
 
     _fetchConnectedAppsPromise = (async () => {
       try {
         const token = localStorage.getItem('token');
         let connectedApps = [];
 
-        // Remote agnt.gg call runs concurrently but we don't block on it for initial render
+        // Shared normalizer — handles strings, {provider_id}, {providerId}, {id}.
+        // Used by every lane so the merge is collision-free by ID.
+        const normalizeProviderId = (app) => {
+          let raw;
+          if (typeof app === 'string') raw = app;
+          else if (app?.provider_id) raw = String(app.provider_id);
+          else if (app?.providerId) raw = String(app.providerId);
+          else if (app?.id) raw = String(app.id);
+          else return null;
+          return resolveProviderKey(raw) || raw.toLowerCase();
+        };
+
+        // LANE 1 — local backend (env + local api_keys + local oauth_tokens).
+        // This is what surfaces env-sourced keys (OPENAI_API_KEY in .env etc.)
+        // as "connected" without any UI action and without needing remote.
+        const localBackendPromise = axios.get(`${API_CONFIG.BASE_URL}/auth/connected`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          timeout: 2000,
+        }).catch(() => null);
+
+        // LANE 2 — remote agnt.gg (legacy + back-compat for remote-stored keys).
         const remotePromise = axios.get(`${API_CONFIG.REMOTE_URL}/auth/connected`, {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
           timeout: 5000,
         }).catch(() => null);
 
-        // Fast local checks via unified endpoints — these resolve in <100ms
+        // LANE 3 — local CLI providers via per-provider status probes (<100ms each).
         const statusResults = await Promise.allSettled(
           CLI_PROVIDER_IDS.map((id) => providerAuthService.getStatus(id)),
         );
 
-        // Process each CLI provider status
         CLI_PROVIDER_IDS.forEach((id, index) => {
           const result = statusResults[index];
           if (result.status === 'fulfilled') {
@@ -109,21 +167,26 @@ const actions = {
           }
         });
 
-        // Commit local results immediately so UI can render
-        const localDeduped = Array.from(new Set(connectedApps));
-        commit('SET_CONNECTED_APPS', localDeduped);
+        // Local backend usually resolves before remote — merge it in next so the
+        // UI lights up env-sourced providers without waiting on the remote round-trip.
+        const localBackendResult = await localBackendPromise;
+        if (localBackendResult && Array.isArray(localBackendResult.data)) {
+          const localBackendApps = localBackendResult.data.map(normalizeProviderId).filter(Boolean);
+          connectedApps = [...new Set([...localBackendApps, ...connectedApps])];
+        }
 
-        // Now await the remote result and merge it in
+        // Cold start only: commit the local-only set early so the UI can paint
+        // before remote resolves. On refresh polls we skip this — see comment
+        // above for why (avoids dropping remote-only providers mid-flight).
+        if (isColdStart) {
+          commit('SET_CONNECTED_APPS', Array.from(new Set(connectedApps)));
+        }
+
+        // Finally merge remote — purely additive.
+        // If remote fails on a refresh poll, leave Vuex untouched rather than
+        // wiping it down to the local-only set.
         const remoteResult = await remotePromise;
         if (remoteResult && Array.isArray(remoteResult.data)) {
-          const normalizeProviderId = (app) => {
-            let raw;
-            if (typeof app === 'string') raw = app;
-            else if (app?.provider_id) raw = String(app.provider_id);
-            else if (app?.id) raw = String(app.id);
-            else return null;
-            return resolveProviderKey(raw) || raw.toLowerCase();
-          };
           const remoteApps = remoteResult.data.map(normalizeProviderId).filter(Boolean);
           const merged = Array.from(new Set([...remoteApps, ...connectedApps]));
           commit('SET_CONNECTED_APPS', merged);
@@ -430,8 +493,32 @@ const actions = {
         },
       });
 
-      // Refresh the providers list after update
-      await dispatch('fetchAllProviders');
+      // Optimistic patch — the UI snaps to the edited values immediately,
+      // independent of the refetch. Without this, the form fields can
+      // briefly revert if anything else returns a stale provider list.
+      // Snake_case mirrors are kept for components reading either casing.
+      const patch = {
+        ...providerData,
+        connection_type: providerData.connectionType ?? providerData.connection_type,
+        custom_prompt: providerData.customPrompt ?? providerData.custom_prompt,
+        redirect_uri: providerData.redirectUri ?? providerData.redirect_uri,
+        auth_url: providerData.authUrl ?? providerData.auth_url,
+        auth_params: providerData.authParams ?? providerData.auth_params,
+        token_url: providerData.tokenUrl ?? providerData.token_url,
+        token_params: providerData.tokenParams ?? providerData.token_params,
+        token_headers: providerData.tokenHeaders ?? providerData.token_headers,
+        refresh_url: providerData.refreshUrl ?? providerData.refresh_url,
+        refresh_params: providerData.refreshParams ?? providerData.refresh_params,
+        refresh_headers: providerData.refreshHeaders ?? providerData.refresh_headers,
+        provider_code: providerData.providerCode ?? providerData.provider_code,
+      };
+      commit('PATCH_PROVIDER', { id, patch });
+
+      // forceRefresh: true is required — without it, the 5-min freshness
+      // cache on fetchAllProviders silently no-ops the refetch and the UI
+      // keeps showing the pre-edit data until the user reloads.
+      await dispatch('fetchAllProviders', { forceRefresh: true });
+      notifyLocalBackendProviderChanged('updated', id);
       return { success: true, ...response.data };
     } catch (error) {
       console.error('Error updating provider:', error);
@@ -447,8 +534,16 @@ const actions = {
         },
       });
 
-      // Refresh the connected apps list after deletion
-      await dispatch('fetchConnectedApps', { forceRefresh: true });
+      // Optimistic remove — UI updates immediately; refetch reconciles.
+      commit('REMOVE_PROVIDER', providerId);
+
+      // Refresh both lists: the provider catalog (so the deleted row drops
+      // out of the grid) and the connected-apps list (so any badge clears).
+      await Promise.all([
+        dispatch('fetchAllProviders', { forceRefresh: true }),
+        dispatch('fetchConnectedApps', { forceRefresh: true }),
+      ]);
+      notifyLocalBackendProviderChanged('deleted', providerId);
       return { success: true, ...response.data };
     } catch (error) {
       console.error('Error deleting provider:', error);

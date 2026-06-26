@@ -24,7 +24,7 @@ import UserModel from '../models/UserModel.js';
 import AgentModel from '../models/AgentModel.js';
 import SkillModel from '../models/SkillModel.js';
 import { buildSkillsContext } from './SkillService.js';
-import { createSession as createUnfirehoseSession, wrapSendEvent as wrapUnfirehoseSendEvent, isEnabled as isUnfirehoseEnabled } from './unfirehose/UnfirehoseLogger.js';
+import { createSession as createUnfirehoseSession, wrapSendEvent as wrapUnfirehoseSendEvent, isEnabled as isUnfirehoseEnabled, deriveProjectSlug as deriveUnfirehoseProjectSlug } from './unfirehose/UnfirehoseLogger.js';
 import { saveBase64Image } from './ImageStorage.js';
 import pathManager from '../utils/PathManager.js';
 
@@ -148,6 +148,119 @@ function sanitizeOrphanToolCalls(msgs) {
         console.warn(`[sanitizeOrphanToolCalls] Injected ${orphans.length} synthetic tool message(s) for orphan tool_calls: ${orphans.map((tc) => tc.id).join(', ')}`);
       }
     }
+  }
+  return out;
+}
+
+/**
+ * Inverse of sanitizeOrphanToolCalls: remove tool_result blocks whose matching
+ * tool_use is missing from the IMMEDIATELY PREVIOUS assistant message.
+ *
+ * This rescues histories already corrupted by a prior bug (e.g. a refusal turn
+ * that dropped tool_use blocks but left the tool_result downstream). Anthropic
+ * 400s with "unexpected tool_use_id found in tool_result blocks" on replay;
+ * this strips the orphans so the next call goes through.
+ *
+ * If a user message ends up empty after orphan removal, drop the whole message
+ * (Anthropic also rejects empty user content arrays).
+ *
+ * Also handles the OpenAI-style inverse: role:'tool' messages with no matching
+ * tool_calls[] entry on the preceding assistant.
+ */
+function sanitizeUnexpectedToolResults(msgs) {
+  if (!Array.isArray(msgs) || msgs.length === 0) return msgs;
+  const out = [];
+  let removedAnthropic = 0;
+  let removedOpenAI = 0;
+
+  for (let i = 0; i < msgs.length; i++) {
+    const msg = msgs[i];
+
+    // Anthropic-style: user message with tool_result blocks; validate against
+    // the previous assistant message's tool_use ids.
+    if (
+      msg && msg.role === 'user' &&
+      Array.isArray(msg.content) &&
+      msg.content.some((b) => b && b.type === 'tool_result')
+    ) {
+      const prev = out[out.length - 1];
+      const validIds = new Set();
+      if (prev && prev.role === 'assistant' && Array.isArray(prev.content)) {
+        for (const b of prev.content) {
+          if (b && b.type === 'tool_use' && b.id) validIds.add(b.id);
+        }
+      }
+
+      const keptBlocks = [];
+      const orphanIds = [];
+      for (const b of msg.content) {
+        if (b && b.type === 'tool_result') {
+          if (validIds.has(b.tool_use_id)) keptBlocks.push(b);
+          else orphanIds.push(b.tool_use_id);
+        } else {
+          keptBlocks.push(b);
+        }
+      }
+
+      if (orphanIds.length > 0) {
+        removedAnthropic += orphanIds.length;
+        console.warn(
+          `[sanitizeUnexpectedToolResults] Removed ${orphanIds.length} orphan tool_result block(s): ${orphanIds.join(', ')}`,
+        );
+      }
+
+      if (keptBlocks.length > 0) {
+        out.push({ ...msg, content: keptBlocks });
+      }
+      continue;
+    }
+
+    // OpenAI-style: role:'tool' message; validate against preceding assistant's
+    // tool_calls[]. Walk back over consecutive role:'tool' messages until we
+    // hit the assistant that owns them.
+    if (msg && msg.role === 'tool') {
+      // Find the most recent non-tool message in out — should be the assistant.
+      let prevAssistant = null;
+      for (let k = out.length - 1; k >= 0; k--) {
+        const candidate = out[k];
+        if (!candidate || candidate.role === 'tool') continue;
+        if (candidate.role === 'assistant') prevAssistant = candidate;
+        break;
+      }
+      // Collect valid IDs from BOTH possible assistant shapes so a mixed-format
+      // history (e.g. a saved Anthropic-format assistant message in a turn
+      // that's now being replayed to an OpenAI-compatible provider) doesn't
+      // get its valid tool messages mistakenly stripped:
+      //   - OpenAI shape: prevAssistant.tool_calls[].id
+      //   - Anthropic shape: prevAssistant.content[].tool_use.id
+      const validIds = new Set();
+      if (prevAssistant && Array.isArray(prevAssistant.tool_calls)) {
+        for (const tc of prevAssistant.tool_calls) {
+          if (tc && tc.id) validIds.add(tc.id);
+        }
+      }
+      if (prevAssistant && Array.isArray(prevAssistant.content)) {
+        for (const block of prevAssistant.content) {
+          if (block && block.type === 'tool_use' && block.id) validIds.add(block.id);
+        }
+      }
+      if (msg.tool_call_id && !validIds.has(msg.tool_call_id)) {
+        removedOpenAI++;
+        console.warn(
+          `[sanitizeUnexpectedToolResults] Removed orphan role:'tool' message ` +
+          `(tool_call_id=${msg.tool_call_id} not in preceding assistant.tool_calls or content[].tool_use)`,
+        );
+        continue;
+      }
+    }
+
+    out.push(msg);
+  }
+
+  if (removedAnthropic > 0 || removedOpenAI > 0) {
+    console.warn(
+      `[sanitizeUnexpectedToolResults] Total removed — anthropic tool_result blocks: ${removedAnthropic}, openai tool messages: ${removedOpenAI}`,
+    );
   }
   return out;
 }
@@ -960,6 +1073,7 @@ async function universalChatHandler(req, res, context = {}) {
   }
 
   messageInput = sanitizeOrphanToolCalls(messageInput);
+  messageInput = sanitizeUnexpectedToolResults(messageInput);
   messageInput = sanitizeEmptyAssistantMessages(messageInput);
 
   // Set up streaming response
@@ -1053,6 +1167,15 @@ async function universalChatHandler(req, res, context = {}) {
         model,
         chatType,
         firstPrompt: typeof firstPrompt === 'string' ? firstPrompt : String(firstPrompt || ''),
+        projectSlug: deriveUnfirehoseProjectSlug({
+          chatType,
+          agentContext,
+          workflowContext,
+          toolContext,
+          widgetContext,
+          goalContext,
+          goalId,
+        }),
       });
       sendEvent = wrapUnfirehoseSendEvent(unfirehoseSession, rawSendEvent);
       console.log(`[unfirehose] Session ${conversationId} → ${unfirehoseSession.outputFile}`);
@@ -2345,12 +2468,30 @@ IMPORTANT: The image data is already available in the system context. You don't 
         // Use preserved events (captured before offloading) to avoid DATA_REF placeholders
         const frontendEventsToSend = preservedFrontendEvents || (toolCallResult && toolCallResult.frontendEvents);
         if (frontendEventsToSend) {
+          console.log(`[Orchestrator] ${functionName} dispatching ${frontendEventsToSend.length} frontend event(s):`, frontendEventsToSend.map(e => e.type).join(', '));
           frontendEventsToSend.forEach((event) => {
             sendEvent('frontend_event', {
               assistantMessageId,
               eventType: event.type,
               eventData: event.data,
             });
+            // Tutorial/highlight events are UI-global: they must reach every
+            // tab the user has open, not just the SSE-originating one. Mirror
+            // them over socket.io so a tab that's only listening to broadcasts
+            // (chat sent from a different window, etc.) still pops the tour.
+            if (userId && (event.type === 'tutorial:start' || event.type === 'tutorial:end')) {
+              try {
+                broadcastToUser(userId, event.type, {
+                  ...event.data,
+                  conversationId,
+                  chatType,
+                  timestamp: Date.now(),
+                });
+                console.log(`[Orchestrator] mirrored ${event.type} to socket.io for user ${userId}`);
+              } catch (broadcastErr) {
+                console.warn('[Orchestrator] socket.io tutorial broadcast failed:', broadcastErr.message);
+              }
+            }
           });
         }
 
@@ -2692,6 +2833,7 @@ IMPORTANT: The image data is already available in the system context. You don't 
     // tool_use block is saved without a result — the next turn then fails with
     // "tool_use ids were found without tool_result blocks immediately after".
     messages = sanitizeOrphanToolCalls(messages);
+    messages = sanitizeUnexpectedToolResults(messages);
     messages = sanitizeEmptyAssistantMessages(messages);
 
     // Log conversation
@@ -2959,6 +3101,113 @@ Generate 3 smart, contextual suggestions that would be helpful next steps. Retur
 }
 
 
+// Display order + friendly names for built-in subcategories. Maps each
+// internal TOOL_GROUPS key to the bucket label users see in the dropdown.
+// Order here = order in the UI (top-to-bottom).
+const BUILTIN_DISPLAY_GROUPS = [
+  { id: 'core', name: 'Core' },
+  { id: 'shell', name: 'Shell & Terminal' },
+  { id: 'agent_management', name: 'Agents' },
+  { id: 'workflow_authoring', name: 'Workflows' },
+  { id: 'goal_management', name: 'Goals' },
+  { id: 'tool_authoring', name: 'Tool Forge' },
+  { id: 'widget_authoring', name: 'Widgets' },
+  { id: 'artifact_code', name: 'Artifacts' },
+  { id: 'media', name: 'Media' },
+  { id: 'email', name: 'Email' },
+  { id: 'memory', name: 'Memory' },
+  { id: 'tutorial', name: 'Guided Tours' },
+  { id: 'agnt_platform', name: 'AGNT Platform' },
+];
+
+// Map built-in tools into subcategories using TOOL_GROUPS as the taxonomy.
+// `agnt_platform` is a superset that pulls in many leaf-group tools — we
+// process it LAST so a more specific group claims a tool first. Anything
+// not in any group lands in "Other" so nothing disappears.
+async function buildBuiltinSubcategories(tools) {
+  const { TOOL_GROUPS, GROUP_DESCRIPTIONS } = await import('./orchestrator/toolSelector.js');
+  const assigned = new Set();
+  const toolsByGroup = {};
+  for (const { id } of BUILTIN_DISPLAY_GROUPS) toolsByGroup[id] = [];
+
+  const orderedGroups = BUILTIN_DISPLAY_GROUPS.filter((g) => g.id !== 'agnt_platform')
+    .concat(BUILTIN_DISPLAY_GROUPS.filter((g) => g.id === 'agnt_platform'));
+
+  for (const group of orderedGroups) {
+    const names = TOOL_GROUPS[group.id] || [];
+    for (const tool of tools) {
+      if (assigned.has(tool.name)) continue;
+      if (names.includes(tool.name)) {
+        toolsByGroup[group.id].push(tool);
+        assigned.add(tool.name);
+      }
+    }
+  }
+
+  const unassigned = tools.filter((t) => !assigned.has(t.name));
+  const subcategories = [];
+  for (const group of BUILTIN_DISPLAY_GROUPS) {
+    const groupTools = toolsByGroup[group.id];
+    if (!groupTools || groupTools.length === 0) continue;
+    groupTools.sort((a, b) => a.name.localeCompare(b.name));
+    subcategories.push({
+      id: `builtin.${group.id}`,
+      name: group.name,
+      description: GROUP_DESCRIPTIONS[group.id] || '',
+      tools: groupTools,
+    });
+  }
+  if (unassigned.length > 0) {
+    unassigned.sort((a, b) => a.name.localeCompare(b.name));
+    subcategories.push({
+      id: 'builtin.other',
+      name: 'Other',
+      description: 'Tools not yet bucketed into a sector.',
+      tools: unassigned,
+    });
+  }
+  return subcategories;
+}
+
+// Recursively sort a category's subcategories and tools A-Z by name.
+// Mutates in place.
+function sortCategoryTreeAlphabetically(category) {
+  if (!category) return;
+  if (Array.isArray(category.tools)) {
+    category.tools.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  }
+  if (Array.isArray(category.subcategories)) {
+    category.subcategories.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    for (const sub of category.subcategories) {
+      sortCategoryTreeAlphabetically(sub);
+    }
+  }
+}
+
+// Bucket plugin tools by their owning plugin so users see plugin names
+// rather than a flat list of tool ids with no provenance.
+function buildPluginSubcategories(pluginTools) {
+  const byPlugin = new Map();
+  for (const tool of pluginTools) {
+    const key = tool.pluginName || '(unknown plugin)';
+    if (!byPlugin.has(key)) byPlugin.set(key, []);
+    byPlugin.get(key).push(tool);
+  }
+  const subcategories = [];
+  const sortedPlugins = [...byPlugin.keys()].sort((a, b) => a.localeCompare(b));
+  for (const pluginName of sortedPlugins) {
+    const tools = byPlugin.get(pluginName);
+    tools.sort((a, b) => a.name.localeCompare(b.name));
+    subcategories.push({
+      id: `plugin.${pluginName.toLowerCase().replace(/\s+/g, '-')}`,
+      name: pluginName,
+      description: '',
+      tools,
+    });
+  }
+  return subcategories;
+}
+
 async function getAvailableTools(req, res) {
   try {
     const { getAvailableToolSchemas } = await import('./orchestrator/tools.js');
@@ -3033,19 +3282,28 @@ async function getAvailableTools(req, res) {
     builtInTools.sort((a, b) => a.name.localeCompare(b.name));
 
     // Build response in the canonical order:
-    //   1. Built In  (the frontend re-splits this into Specialty Tools +
-    //      System Built In Tools — Specialty bubbles to the top, locked)
-    //   2. Plugins
+    //   1. Built In  (subdivided by sector — Agents / Workflows / Goals /
+    //      Tool Forge / Widgets / Artifacts / Media / etc.). The frontend
+    //      may re-split this into Specialty Tools + System Tools when the
+    //      channel has locked specialty tools; otherwise it renders the
+    //      nested sectors directly.
+    //   2. Plugins  (subdivided by plugin name, so each plugin's tools are
+    //      grouped under their owning plugin rather than dumped in one
+    //      A-Z flat list with no provenance).
     //   3. MCP  (single top-level entry; per-server entries are nested
     //      subcategories inside it, kept hierarchical so users with many
     //      MCP servers don't get a flat wall of top-level categories)
+    const builtinSubcategories = await buildBuiltinSubcategories(builtInTools);
     const categories = [
       {
         id: 'builtin',
         name: 'Built In',
         description: 'Tools that ship with AGNT — system, agents, workflows, widgets, tool forge, code, and platform integrations.',
         locked: false,
-        tools: builtInTools,
+        // Keep the flat list available for any legacy reader, but the
+        // frontend prefers `subcategories` when present.
+        tools: [],
+        subcategories: builtinSubcategories,
       },
     ];
 
@@ -3055,7 +3313,8 @@ async function getAvailableTools(req, res) {
         name: 'Plugins',
         description: 'Tools from installed plugins',
         locked: false,
-        tools: pluginTools,
+        tools: [],
+        subcategories: buildPluginSubcategories(pluginTools),
       });
     }
 
@@ -3064,6 +3323,15 @@ async function getAvailableTools(req, res) {
     // it last so it sits beneath Built In + Plugins in the dropdown.
     for (const cat of mcpCategories) {
       categories.push(cat);
+    }
+
+    // Recursive A-Z sort: every subcategory list and every tools list
+    // throughout the tree gets sorted by display name. Built In, Plugins,
+    // and MCP all get consistent alphabetical ordering inside their
+    // top-level buckets. (Top-level order — Built In → Plugins → MCP —
+    // is intentional and preserved.)
+    for (const cat of categories) {
+      sortCategoryTreeAlphabetically(cat);
     }
 
     res.json({ categories });

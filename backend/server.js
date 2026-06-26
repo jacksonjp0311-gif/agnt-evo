@@ -15,6 +15,7 @@ import PluginManager from './src/plugins/PluginManager.js';
 
 // Import your API routes
 import UserRoutes from './src/routes/UserRoutes.js';
+import AuthRoutes from './src/routes/AuthRoutes.js';
 import ProviderAuthRoutes from './src/routes/ProviderAuthRoutes.js';
 import StreamRoutes from './src/routes/StreamRoutes.js';
 import WorkflowRoutes from './src/routes/WorkflowRoutes.js';
@@ -49,6 +50,12 @@ import ImageRoutes from './src/routes/ImageRoutes.js';
 import LocalFileRoutes from './src/routes/LocalFileRoutes.js';
 import AdminClientVersionRoutes from './src/routes/AdminClientVersionRoutes.js';
 import ConversationSettingsRoutes from './src/routes/ConversationSettingsRoutes.js';
+import ScheduleRoutes from './src/routes/ScheduleRoutes.js';
+import SchedulerService from './src/services/scheduler/SchedulerService.js';
+import WalletRoutes from './src/routes/WalletRoutes.js';
+import ContractRoutes from './src/routes/ContractRoutes.js';
+import MutationHistoryRoutes from './src/routes/MutationHistoryRoutes.js';
+import { dbReady } from './src/models/database/index.js';
 import { warmupClientVersions } from './src/services/ai/clientVersions.js';
 import WorkflowProcessBridge from './src/workflow/WorkflowProcessBridge.js';
 import { broadcastToUser, broadcast, RealtimeEvents } from './src/utils/realtimeSync.js';
@@ -156,6 +163,7 @@ if (frontendExists) {
 // Define API routes
 app.use('/lite', express.static(path.join(__dirname, '..', 'lite')));
 app.use('/api/users', UserRoutes);
+app.use('/api/auth', AuthRoutes);
 app.use('/api/providers', ProviderAuthRoutes);
 app.use('/api/stream', StreamRoutes);
 app.use('/api/agents', AgentRoutes);
@@ -191,13 +199,34 @@ app.use('/api/images', ImageRoutes);
 app.use('/api/local-file', LocalFileRoutes);
 app.use('/api/admin', AdminClientVersionRoutes);
 app.use('/api/conversations', ConversationSettingsRoutes);
+app.use('/api/schedules', ScheduleRoutes);
+app.use('/api/wallets', WalletRoutes);
+app.use('/api/contracts', ContractRoutes);
+app.use('/api/mutations', MutationHistoryRoutes);
+
+// PRD-091: Closed Loop — boot the durable scheduler once the DB is ready.
+dbReady.then(() => {
+  SchedulerService.start().catch((err) => {
+    console.error('[Scheduler] Failed to start:', err);
+  });
+});
 app.get('/api/health', (req, res) => res.status(200).json({ status: 'OK' }));
 
-// Version endpoint - reads dynamically from package.json
+// Version + update-check endpoints share a one-time cached package.json read
+// (PRD-084-R2 §0.5) — the app version cannot change without a restart, so
+// re-reading and re-parsing the file on every request was wasted I/O.
+let cachedPackageJson = null;
+const getPackageJson = () => {
+  if (!cachedPackageJson) {
+    const packageJsonPath = path.join(__dirname, '..', 'package.json');
+    cachedPackageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+  }
+  return cachedPackageJson;
+};
+
 app.get('/api/version', (req, res) => {
   try {
-    const packageJsonPath = path.join(__dirname, '..', 'package.json');
-    const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+    const packageJson = getPackageJson();
     res.status(200).json({
       version: packageJson.version,
       name: packageJson.name,
@@ -212,10 +241,8 @@ app.get('/api/version', (req, res) => {
 // Update check endpoint - proxies to agnt.gg to avoid CORS issues
 app.get('/api/updates/check', async (req, res) => {
   try {
-    // Get current version from local package.json
-    const packageJsonPath = path.join(__dirname, '..', 'package.json');
-    const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
-    const currentVersion = packageJson.version;
+    // Get current version from the cached package.json (PRD-084-R2 §0.5)
+    const currentVersion = getPackageJson().version;
 
     // Call agnt.gg API to check for updates
     const response = await fetch(`https://agnt.gg/api/updates/check?version=${currentVersion}`);
@@ -349,7 +376,12 @@ async function deferredInit() {
     console.error('Plugin initialization error (non-fatal):', error);
   }
 
-  // Spawn workflow process AFTER plugins and database are ready
+  // Spawn workflow process AFTER plugins and database are ready.
+  // PRD-084-R2 §0.2: the child is forked with AGNT_SKIP_DB_INIT=1 and trusts
+  // this process to own schema init — this await IS the ordering guarantee,
+  // not an optimization. dbReady never rejects (it catches internally).
+  const { dbReady } = await import('./src/models/database/index.js');
+  await dbReady;
   console.log('Spawning workflow process...');
   try {
     await WorkflowProcessBridge.spawn();
@@ -475,6 +507,20 @@ function startServer() {
         ack?.({ ok: true });
       });
 
+      // Live page-scan response from a client tab. Resolves a pending
+      // `scan_page_elements` tool call in tutorialScanRegistry. First
+      // response wins; later responses (other tabs) are dropped.
+      socket.on('tutorial:scan_response', async ({ requestId, elements } = {}) => {
+        if (!socket.userId || !requestId) return;
+        const { resolvePendingScan } = await import('./src/services/orchestrator/tutorialScanRegistry.js');
+        const ok = resolvePendingScan(requestId, Array.isArray(elements) ? elements : []);
+        if (ok) {
+          console.log(`[Socket.IO] tutorial:scan_response ${requestId} accepted from user ${socket.userId}: ${elements?.length || 0} elements`);
+        } else {
+          console.log(`[Socket.IO] tutorial:scan_response ${requestId} ignored (no pending request — already resolved or expired)`);
+        }
+      });
+
       socket.on('disconnect', () => {
         if (socket.userId) {
           console.log(`[Socket.IO] User ${socket.userId} disconnected: ${socket.id}`);
@@ -557,10 +603,12 @@ function startServer() {
       // });
     });
 
+    // PRD-084-R2 §0.5: memory heartbeat every 60s (10s was pure log noise);
+    // set DEBUG_MEM=1 to restore the 10s cadence when actively profiling.
     setInterval(() => {
       const used = process.memoryUsage().heapUsed / 1024 / 1024;
       console.log(`Current memory usage: approximately ${Math.round(used * 100) / 100} MB`);
-    }, 1 * 10 * 1000);
+    }, process.env.DEBUG_MEM === '1' ? 10 * 1000 : 60 * 1000);
 
     console.log(`Server process ID: ${process.pid}`);
   };

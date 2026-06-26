@@ -51,6 +51,7 @@ export function emitClearSteer(conversationId) {
 let debouncedAgentFetch = null;
 let debouncedWorkflowFetch = null;
 let debouncedContentFetch = null;
+let debouncedProviderFetch = null;
 
 /**
  * Composable for real-time sync via Socket.IO
@@ -128,6 +129,51 @@ export function useRealtimeSync() {
       isConnected.value = false;
     });
 
+    // AI-driven tutorial / highlight overlays — bridge socket.io broadcasts
+    // into the window event the AIGuidedTourHost listens on. Mirrors the
+    // SSE-side dispatch in chatUnified.js so tabs that aren't streaming
+    // (e.g. user is chatting in window A and watching window B) still pop
+    // the overlay.
+    // Live page-scan: the backend asks each tab to enumerate its visible
+    // interactive elements. Foreground tabs reply immediately; hidden tabs
+    // delay 200ms so the active tab's response wins on the server.
+    socket.on('tutorial:scan_request', async ({ requestId, filter } = {}) => {
+      console.log('[Realtime] tutorial:scan_request', requestId, 'filter=', filter || '∅', 'visible=', document.visibilityState);
+      try {
+        const { scanInteractiveElements } = await import('@/views/_components/utility/domScanner.js');
+        const respond = () => {
+          const elements = scanInteractiveElements({ filter });
+          socket.emit('tutorial:scan_response', { requestId, elements });
+          console.log('[Realtime] tutorial:scan_response sent', requestId, elements.length);
+        };
+        if (document.visibilityState === 'visible') {
+          respond();
+        } else {
+          setTimeout(respond, 200);
+        }
+      } catch (e) {
+        console.error('[Realtime] scan failed:', e);
+        socket.emit('tutorial:scan_response', { requestId, elements: [] });
+      }
+    });
+
+    socket.on('tutorial:start', (data) => {
+      console.log('[Realtime] tutorial:start broadcast received', data);
+      try {
+        window.dispatchEvent(new CustomEvent('ai-tour:start', { detail: data }));
+      } catch (e) {
+        console.error('[Realtime] dispatching ai-tour:start failed:', e);
+      }
+    });
+    socket.on('tutorial:end', (data) => {
+      console.log('[Realtime] tutorial:end broadcast received', data);
+      try {
+        window.dispatchEvent(new CustomEvent('ai-tour:end', { detail: data }));
+      } catch (e) {
+        console.error('[Realtime] dispatching ai-tour:end failed:', e);
+      }
+    });
+
     // Initialize debounced fetch functions
     // These prevent multiple rapid events from triggering multiple API calls
     if (!debouncedAgentFetch) {
@@ -145,6 +191,12 @@ export function useRealtimeSync() {
     if (!debouncedContentFetch) {
       debouncedContentFetch = debounce(() => {
         store.dispatch('contentOutputs/refreshOutputs');
+      }, 500, { leading: true, trailing: true });
+    }
+
+    if (!debouncedProviderFetch) {
+      debouncedProviderFetch = debounce(() => {
+        store.dispatch('appAuth/fetchAllProviders', { forceRefresh: true });
       }, 500, { leading: true, trailing: true });
     }
 
@@ -488,6 +540,39 @@ export function useRealtimeSync() {
       }
     });
 
+    // Autonomy router events
+    socket.on('evolution:insight_escalated', (data) => {
+      console.log('[Realtime] Insight escalated:', data);
+      // Pull a fresh page of pending insights so the inbox count + escalation list update.
+      store.dispatch('insights/fetchInsights', { status: 'pending', limit: 200 }).catch(() => {});
+      store.dispatch('insights/fetchStats').catch(() => {});
+      window.dispatchEvent(new CustomEvent('autonomy-escalated', { detail: data }));
+    });
+
+    socket.on('evolution:insight_applied', (data) => {
+      console.log('[Realtime] Insight applied by router:', data);
+      if (data?.insightId) {
+        store.commit('insights/UPDATE_INSIGHT_STATUS', { id: data.insightId, status: 'applied' });
+      }
+      store.dispatch('insights/fetchStats').catch(() => {});
+      // Refresh mutation history if the user has the panel open.
+      store.dispatch('mutations/fetchHistory').catch(() => {});
+      window.dispatchEvent(new CustomEvent('autonomy-applied', { detail: data }));
+    });
+
+    // Scheduler / mutation events (best-effort; backend may emit later)
+    socket.on('schedule:fired', (data) => {
+      console.log('[Realtime] Schedule fired:', data);
+      store.dispatch('schedules/fetchSchedules').catch(() => {});
+    });
+    socket.on('mutation:reverted', (data) => {
+      console.log('[Realtime] Mutation reverted:', data);
+      if (data?.id) {
+        store.commit('mutations/UPDATE_MUTATION_STATUS', { id: data.id, status: 'reverted' });
+      }
+      window.dispatchEvent(new CustomEvent('mutation-reverted', { detail: data }));
+    });
+
     // Experiment Events
     socket.on('experiment:status', (data) => {
       console.log('[Realtime] Experiment status:', data);
@@ -518,6 +603,24 @@ export function useRealtimeSync() {
       console.log('[Realtime] Plugin uninstalled:', data);
       // Dispatch window event for components to refresh their local state
       window.dispatchEvent(new CustomEvent('plugin-uninstalled', { detail: data }));
+    });
+
+    // Auth provider events — refresh the global provider list so newly
+    // registered providers show up in Settings → Connections without a
+    // full frontend reload.
+    socket.on('provider:created', (data) => {
+      console.log('[Realtime] Provider created:', data);
+      debouncedProviderFetch();
+    });
+
+    socket.on('provider:updated', (data) => {
+      console.log('[Realtime] Provider updated:', data);
+      debouncedProviderFetch();
+    });
+
+    socket.on('provider:deleted', (data) => {
+      console.log('[Realtime] Provider deleted:', data);
+      debouncedProviderFetch();
     });
   };
 

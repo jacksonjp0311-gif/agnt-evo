@@ -1,6 +1,8 @@
 import { createLlmClient } from './LlmService.js';
 import { createLlmAdapter } from '../orchestrator/llmAdapters.js';
 import { executeTool } from '../orchestrator/tools.js';
+import { loadWorkspaceContextSection } from '../orchestrator/workspaceContext.js';
+import { getPlatformContextSection } from '../orchestrator/system-prompts/platform-context.js';
 import { manageContext } from '../../utils/contextManager.js';
 import crypto from 'crypto';
 
@@ -485,8 +487,10 @@ class LlmExecutionService {
    * @param {Array} toolSchemas - Available tool schemas
    * @returns {string} System prompt
    */
-  buildAgentSystemPrompt(agent, toolSchemas) {
+  async buildAgentSystemPrompt(agent, toolSchemas) {
     const currentDate = new Date().toString();
+    const workspaceSection = await loadWorkspaceContextSection();
+    const platformSection = getPlatformContextSection();
 
     return `Current date and time: ${currentDate}
 
@@ -494,6 +498,8 @@ You are an AI assistant named '${agent.name}'.
 ${agent.description}
 
 You are executing a task as part of a larger goal. Use your assigned tools to complete the task effectively.
+${workspaceSection ? `\n${workspaceSection}\n` : ''}
+${platformSection}
 
 AVAILABLE TOOLS:
 ${toolSchemas.map((tool) => `- ${tool.function.name}: ${tool.function.description}`).join('\n')}
@@ -502,7 +508,7 @@ IMPORTANT:
 - Focus on completing the specific task assigned to you
 - Use your tools strategically to gather information and produce results
 - Provide clear, structured output that can be used by subsequent tasks
-- If you need to save data for later use, use the file_operations tool`;
+- If you need to save data for later use, use the file_operations tool — place files under the workspace path above unless the user explicitly named a different location`;
   }
 }
 

@@ -4,12 +4,12 @@
       "name": "discord-plugin",
       "displayName": "Discord",
       "icon": "discord",
-      "version": "1.4.0",
-      "description": "Discord integration for AGNT - send messages, manage roles, upload files with inline video/image previews, and receive messages from Discord channels.",
+      "version": "1.5.0",
+      "description": "Discord integration plugin for AGNT - Send messages (with automatic message chunking for content over Discord's 2000-char limit), manage roles, receive messages, upload files with inline video/image previews, and interact with Discord servers.",
       "author": "AGNT Team",
       "homepage": "https://github.com/agnt-gg/agnt",
       "downloadUrl": "file://marketplace-default/discord-plugin.agnt",
-      "size": 3236948,
+      "size": 3238038,
       "tags": [
         "discord",
         "messaging",
@@ -1009,6 +1009,94 @@
       ]
     },
     {
+      "name": "atlas-cloud",
+      "displayName": "Atlas Cloud",
+      "icon": "atlas-cloud",
+      "version": "1.1.7",
+      "description": "Atlas Cloud unified AI API plugin for images, video, uploads, and chat. Supports Seedream 4.5/5.0 Lite, Flux, GPT-Image-2, Nano Banana 2, Ideogram, Qwen-Image, Wan-2.7, and OpenAI-compatible chat completions.",
+      "author": "AGNT",
+      "homepage": "https://github.com/agnt-gg/agnt",
+      "downloadUrl": "file://marketplace-default/atlas-cloud.agnt",
+      "size": 7526,
+      "tags": [
+        "ai",
+        "image",
+        "video",
+        "chat",
+        "atlas",
+        "generative",
+        "multimodal"
+      ],
+      "category": "ai",
+      "tools": [
+        {
+          "type": "atlas-image",
+          "schema": {
+            "title": "Atlas Image",
+            "description": "Generate or edit an image on Atlas Cloud. Supports Seedream 4.5/5.0 Lite, Flux, GPT-Image-2, Nano Banana 2, Ideogram, Qwen-Image, Wan-2.7 and more."
+          }
+        },
+        {
+          "type": "atlas-video",
+          "schema": {
+            "title": "Atlas Video",
+            "description": "Generate video on Atlas Cloud. Supports Wan/Seedance/etc. Returns videoUrl and can extract/upload the final frame for clip chaining."
+          }
+        },
+        {
+          "type": "atlas-upload",
+          "schema": {
+            "title": "Atlas Upload Media",
+            "description": "Upload a local image/video file to Atlas Cloud and receive a temporary public URL."
+          }
+        },
+        {
+          "type": "atlas-chat",
+          "schema": {
+            "title": "Atlas LLM Chat",
+            "description": "OpenAI-compatible chat completions on Atlas Cloud."
+          }
+        }
+      ]
+    },
+    {
+      "name": "bankr-plugin",
+      "displayName": "Bankr",
+      "icon": "bankr",
+      "version": "2.0.0",
+      "description": "Bankr.bot integration for AGNT — AI-powered crypto trading, token launching, cross-chain swaps, Polymarket betting, and self-sustaining agent infrastructure across Base, Ethereum, Polygon, Unichain, and Solana.",
+      "author": "AGNT Team",
+      "homepage": "https://github.com/agnt-gg/agnt",
+      "downloadUrl": "file://marketplace-default/bankr-plugin.agnt",
+      "size": 10122,
+      "tags": [
+        "bankr",
+        "crypto",
+        "trading",
+        "wallet",
+        "tokens",
+        "polymarket",
+        "defi"
+      ],
+      "category": "finance",
+      "tools": [
+        {
+          "type": "bankr-api",
+          "schema": {
+            "title": "Bankr API",
+            "description": "Interact with Bankr.bot to trade tokens, check prices, launch tokens, sign transactions, manage wallets, and more across Base, Ethereum, Polygon, Unichain, and Solana."
+          }
+        },
+        {
+          "type": "bankr-fee-monitor",
+          "schema": {
+            "title": "Bankr Fee Monitor",
+            "description": "Monitor your token's accumulated trading fees and trigger workflows when fees exceed a threshold. Use for auto-claiming, reinvesting, or alerting on fee revenue."
+          }
+        }
+      ]
+    },
+    {
       "name": "calendly-plugin",
       "displayName": "Calendly",
       "icon": "calendly",
@@ -1041,6 +1129,64 @@
           "schema": {
             "title": "New Calendly Booking",
             "description": "Poll Calendly for newly-created upcoming scheduled events and trigger the workflow when a new booking is detected."
+          }
+        }
+      ]
+    },
+    {
+      "name": "cua-toolkit",
+      "displayName": "Cua Computer-Use Toolkit",
+      "icon": "terminal",
+      "version": "0.3.5",
+      "description": "Autonomous desktop computer-use for AGNT, powered by the Cua Driver (trycua/cua). Lets agents see windows, read accessibility trees + screenshots, click elements by index, type text, and run a full autonomous goal loop — all in the background without stealing your cursor or focus. Self-contained: cua-setup action=ensure installs the driver + starts the daemon in one call.",
+      "author": "Annie (AGNT)",
+      "homepage": "https://github.com/trycua/cua",
+      "downloadUrl": "file://marketplace-default/cua-toolkit.agnt",
+      "size": 13179,
+      "tags": [
+        "cua",
+        "computer-use",
+        "desktop",
+        "automation",
+        "accessibility",
+        "screenshot",
+        "autonomous"
+      ],
+      "category": "utility",
+      "tools": [
+        {
+          "type": "cua-setup",
+          "schema": {
+            "title": "Cua Setup & Doctor",
+            "description": "Install, verify, and manage the Cua Driver. ensure=ONE-CALL bootstrap (install if missing + start daemon + doctor). Other actions: status, doctor, install, serve, stop, version."
+          }
+        },
+        {
+          "type": "cua-windows",
+          "schema": {
+            "title": "Cua List Windows",
+            "description": "Read-only. Enumerate open desktop windows the driver can see, returning each window's pid, windowId, title, and app."
+          }
+        },
+        {
+          "type": "cua-observe",
+          "schema": {
+            "title": "Cua Observe Window",
+            "description": "Read-only. Capture a window's accessibility tree (every interactive element with its index) plus an inline screenshot. Feeds the autonomous loop."
+          }
+        },
+        {
+          "type": "cua-input",
+          "schema": {
+            "title": "Cua Input (Click / Type / Hotkey)",
+            "description": "Low-level primitive input on a real window: click by element index, type text, press hotkeys, launch apps. Background dispatch — does not steal cursor/focus. Requires confirm=true."
+          }
+        },
+        {
+          "type": "cua-act",
+          "schema": {
+            "title": "Cua Autonomous Act",
+            "description": "High-level autonomous loop. Give a natural-language goal and a target window; tool observes and returns a structured plan for the agent to drive the observe/reason/act/verify loop. dryRun by default; requires confirm=true to execute."
           }
         }
       ]
