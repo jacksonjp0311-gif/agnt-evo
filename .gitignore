@@ -1,28 +1,28 @@
 # Dependencies
-node_modules/
+node_modules\
 npm-cache
-frontend/node_modules/
-backend/node_modules/
+frontend\node_modules\
+backend\node_modules\
 
 # Plugin development (moved to AGNT-PLUGINS repo - https://github.com/jacksonjp0311-gif/AGNT-PLUGINS)
-backend/plugins/dev/
+backend\plugins\dev\
 
 # Plugin builds (generated during build, not stored in git)
-backend/plugins/plugin-builds/
-backend/plugins/dev/*/node_modules/
+backend\plugins\plugin-builds\
+backend\plugins\dev\*\node_modules\
 
 # Claude
-.claude/
+.claude\
 
 # AGNT
-.agnt/
+.agnt\
 
 # Local git worktrees
-.worktrees/
+.worktrees\
 
 # Build outputs
-dist/
-out/
+dist\
+out\
 *.exe
 *.dmg
 *.AppImage
@@ -37,10 +37,10 @@ out/
 .env.production
 
 # Keep example env file
-!backend/.env.example
+!backend\.env.example
 
 # Logs
-logs/
+logs\
 _logs
 *.log
 npm-debug.log*
@@ -54,21 +54,21 @@ Thumbs.db
 desktop.ini
 
 # IDE files
-.vscode/
-.idea/
+.vscode\
+.idea\
 *.swp
 *.swo
 *~
 
 # Temporary files
-tmp/
-temp/
+tmp\
+temp\
 *.tmp
 
 # Frontend build
-frontend/dist/
-frontend/.vite/
-frontend/.cache/
+frontend\dist\
+frontend\.vite\
+frontend\.cache\
 
 # Database files
 *.db
@@ -76,27 +76,30 @@ frontend/.cache/
 *.db-wal
 *.sqlite
 *.sqlite3
-data/
+data\
 
 # Package manager lock files
 package-lock.json
 
 # Claude
-*.claude/
+*.claude\
 
-test-results/
-backend/tests/providers/results/*.json
+test-results\
+backend\tests\providers\results\*.json
 
 # MCP config (contains sensitive data)
 *mcp.json
+
+# Trajectory data (generated at runtime, not committed)
+.trajectory/
 
 # Legacy migration artifacts (already untracked, prevent re-adding)
 _migration_from_broken_*
 _plugin_investigation_*
 _plugin_memory_restore_*
-_publish/
-agnt-auditor/
-code-critic/
-improve-AGNT/
-rddc-evolution/
-neuralforge/
+_publish\
+agnt-auditor\
+code-critic\
+improve-AGNT\
+rddc-evolution\
+neuralforge\
