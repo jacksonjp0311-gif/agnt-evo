@@ -1,0 +1,272 @@
+{
+  "name": "aetherscop-afm",
+  "displayName": "AetherScope AFM",
+  "version": "1.2.0",
+  "description": "AFM-derived volumetric field processing and Omega-basin analysis toolkit. Zero-dependency, offline, local-first scientific computing for AGNT agents.",
+  "author": "James Paul Jackson",
+  "icon": "wave",
+  "homepage": "https://github.com/jacksonjp0311-gif/Aetherscope-AFM-AGNT-PLUGIN",
+  "category": "science",
+  "tags": ["afm", "science", "analysis", "volumetric", "harmonic-fields", "microscopy"],
+  "tools": [
+    {
+      "type": "aetherscop-afm-dashboard",
+      "entryPoint": "./index.js",
+      "schema": {
+        "title": "AFM Dashboard",
+        "category": "action",
+        "type": "aetherscop-afm-dashboard",
+        "icon": "view-dashboard",
+        "description": "Generate complete dashboard: visuals, metrics, ledger, and telemetry",
+        "parameters": {
+          "input_path": {"type": "string", "inputType": "text", "required": true, "description": "Path to input AFM volume"},
+          "output_root": {"type": "string", "inputType": "text", "default": "outputs", "description": "Output root directory"},
+          "config_path": {"type": "string", "inputType": "text", "description": "Path to YAML config"},
+          "profile": {"type": "string", "inputType": "select", "default": "demo", "options": ["fixture", "demo", "production"], "description": "Config profile"}
+        },
+        "outputs": {
+          "run_id": {"type": "string", "description": "Unique run identifier"},
+          "output_root": {"type": "string", "description": "Output directory path"},
+          "metrics": {"type": "object", "description": "Computed metrics object"},
+          "visuals": {"type": "object", "description": "Map of visualization file paths"},
+          "error": {"type": "string"}
+        }
+      }
+    },
+    {
+      "type": "aetherscop-afm-run-single",
+      "entryPoint": "./afm-run-single.js",
+      "schema": {
+        "title": "Run Single",
+        "category": "action",
+        "type": "aetherscop-afm-run-single",
+        "icon": "play",
+        "description": "End-to-end single AFM volume analysis pipeline",
+        "parameters": {
+          "input_path": {"type": "string", "inputType": "text", "required": true, "description": "Path to input AFM volume"},
+          "config": {"type": "string", "inputType": "text", "description": "Path to YAML config"},
+          "profile": {"type": "string", "inputType": "select", "default": "demo", "options": ["fixture", "demo", "production"], "description": "Config profile name"},
+          "output_root": {"type": "string", "inputType": "text", "description": "Override output root directory"}
+        },
+        "outputs": {
+          "run_id": {"type": "string"},
+          "metrics": {"type": "object"},
+          "visuals": {"type": "object"},
+          "error": {"type": "string"}
+        }
+      }
+    },
+    {
+      "type": "aetherscop-afm-preprocess",
+      "entryPoint": "./afm-preprocess.js",
+      "schema": {
+        "title": "AFM Preprocess",
+        "category": "action",
+        "type": "aetherscop-afm-preprocess",
+        "icon": "adjust",
+        "description": "Clip, normalize, and superresolve AFM volumes (.npy)",
+        "parameters": {
+          "input_path": {"type": "string", "inputType": "text", "required": true, "description": "Path to AFM volume (.npy file)"},
+          "clip_min": {"type": "number", "inputType": "number", "description": "Minimum clip value"},
+          "clip_max": {"type": "number", "inputType": "number", "description": "Maximum clip value"},
+          "superres": {"type": "number", "inputType": "number", "default": 1, "description": "Superresolution factor"},
+          "max_size": {"type": "number", "inputType": "number", "default": 128, "description": "Maximum dimension size"}
+        },
+        "outputs": {
+          "success": {"type": "boolean", "description": "Whether the operation succeeded"},
+          "error": {"type": "string", "description": "Error message if failed"}
+        }
+      }
+    },
+    {
+      "type": "aetherscop-afm-harmonic-field",
+      "entryPoint": "./afm-harmonic-field.js",
+      "schema": {
+        "title": "Harmonic Field",
+        "category": "action",
+        "type": "aetherscop-afm-harmonic-field",
+        "icon": "wave-square",
+        "description": "Build T-frame sinusoidal harmonic field tensor from preprocessed AFM volume",
+        "parameters": {
+          "volume_path": {"type": "string", "inputType": "text", "required": true, "description": "Path to preprocessed volume"},
+          "T": {"type": "number", "inputType": "number", "default": 8, "description": "Number of harmonic frames"}
+        },
+        "outputs": {
+          "success": {"type": "boolean"},
+          "error": {"type": "string"}
+        }
+      }
+    },
+    {
+      "type": "aetherscop-afm-metrics",
+      "entryPoint": "./afm-metrics.js",
+      "schema": {
+        "title": "AFM Metrics",
+        "category": "action",
+        "type": "aetherscop-afm-metrics",
+        "icon": "chart-line",
+        "description": "Compute triad metrics (E/I/C), lambda_eff, curvature, and omega correlation",
+        "parameters": {
+          "volume": {"type": "string", "inputType": "text", "required": true, "description": "Path to volume data"},
+          "delta_phi": {"type": "string", "inputType": "text", "description": "Path to delta phi data"},
+          "omega_base": {"type": "string", "inputType": "text", "description": "Path to base omega data"},
+          "omega_noisy": {"type": "string", "inputType": "text", "description": "Path to noisy omega data"}
+        },
+        "outputs": {
+          "C_triad": {"type": "number", "description": "Triad coherence metric"},
+          "lambda_eff": {"type": "number", "description": "Effective lambda"},
+          "E_mean_abs_volume": {"type": "number"},
+          "I_mean_delta_phi": {"type": "number"},
+          "barrier_scale": {"type": "number"},
+          "curvature": {"type": "number"},
+          "omega_corvature": {"type": "number"},
+          "error": {"type": "string"}
+        }
+      }
+    },
+    {
+      "type": "aetherscop-afm-telemetry",
+      "entryPoint": "./afm-telemetry.js",
+      "schema": {
+        "title": "Telemetry",
+        "category": "action",
+        "type": "aetherscop-afm-telemetry",
+        "icon": "chart-timeline-variant",
+        "description": "Emit Codex-ready JSON telemetry from analysis metrics",
+        "parameters": {
+          "metrics_json": {"type": "string", "inputType": "text", "required": true, "description": "Path to metrics JSON"},
+          "output_path": {"type": "string", "inputType": "text", "description": "Output telemetry path"}
+        },
+        "outputs": {
+          "success": {"type": "boolean"},
+          "error": {"type": "string"}
+        }
+      }
+    },
+    {
+      "type": "aetherscop-afm-ledger",
+      "entryPoint": "./afm-ledger.js",
+      "schema": {
+        "title": "Ledger",
+        "category": "action",
+        "type": "aetherscop-afm-ledger",
+        "icon": "book-open-variant",
+        "description": "Append governance ledger entry with gratitude hash",
+        "parameters": {
+          "output_root": {"type": "string", "inputType": "text", "required": true, "description": "Output root directory"},
+          "sample_id": {"type": "string", "inputType": "text", "description": "Sample identifier"},
+          "run_id": {"type": "string", "inputType": "text", "description": "Run identifier"},
+          "metrics": {"type": "string", "inputType": "text", "description": "Path to metrics JSON"}
+        },
+        "outputs": {
+          "success": {"type": "boolean"},
+          "error": {"type": "string"}
+        }
+      }
+    },
+    {
+      "type": "aetherscop-afm-visualize",
+      "entryPoint": "./afm-visualize.js",
+      "schema": {
+        "title": "Visualize",
+        "category": "action",
+        "type": "aetherscop-afm-visualize",
+        "icon": "image-multiple",
+        "description": "Generate PNG dashboard visualizations (slices, histograms, traces)",
+        "parameters": {
+          "volume_slice": {"type": "string", "inputType": "text", "description": "Path to volume slice"},
+          "field_slice": {"type": "string", "inputType": "text", "description": "Path to field slice"},
+          "omega_slice": {"type": "string", "inputType": "text", "description": "Path to omega slice"},
+          "output_dir": {"type": "string", "inputType": "text", "required": true, "description": "Output directory for PNGs"}
+        },
+        "outputs": {
+          "visuals": {"type": "object", "description": "Map of visualization file paths"},
+          "error": {"type": "string"}
+        }
+      }
+    },
+    {
+      "type": "aetherscop-afm-file-explorer",
+      "entryPoint": "./afm-file-explorer.js",
+      "schema": {
+        "title": "File Explorer",
+        "category": "action",
+        "type": "aetherscop-afm-file-explorer",
+        "icon": "folder-search",
+        "description": "Browse directories and list .npy AFM volumes",
+        "parameters": {
+          "base_path": {"type": "string", "inputType": "text", "default": ".", "description": "Base directory to explore"}
+        },
+        "outputs": {
+          "entries": {"type": "array", "description": "List of files and directories"},
+          "error": {"type": "string"}
+        }
+      }
+    },
+    {
+      "type": "aetherscop-afm-file-search",
+      "entryPoint": "./afm-file-search.js",
+      "schema": {
+        "title": "File Search",
+        "category": "action",
+        "type": "aetherscop-afm-file-search",
+        "icon": "file-search",
+        "description": "Grep/regex search across .npy volume collections",
+        "parameters": {
+          "base_path": {"type": "string", "inputType": "text", "required": true, "description": "Base directory to search"},
+          "pattern": {"type": "string", "inputType": "text", "required": true, "description": "Search pattern (regex or glob)"}
+        },
+        "outputs": {
+          "results": {"type": "array", "description": "Matching file paths"},
+          "error": {"type": "string"}
+        }
+      }
+    },
+    {
+      "type": "aetherscop-afm-file-analyze",
+      "entryPoint": "./afm-file-analyze.js",
+      "schema": {
+        "title": "File Analyze",
+        "category": "action",
+        "type": "aetherscop-afm-file-analyze",
+        "icon": "file-document-outline",
+        "description": "Quick metadata + shape + dtype summary of a volume",
+        "parameters": {
+          "input_path": {"type": "string", "inputType": "text", "required": true, "description": "Path to .npy file"}
+        },
+        "outputs": {
+          "shape": {"type": "array", "description": "Array dimensions"},
+          "dtype": {"type": "string", "description": "Data type"},
+          "error": {"type": "string"}
+        }
+      }
+    },
+    {
+      "type": "aetherscop-afm-open-url",
+      "entryPoint": "./open_url_tool.js",
+      "schema": {
+        "title": "Open URL",
+        "category": "action",
+        "type": "aetherscop-afm-open-url",
+        "icon": "open-in-new",
+        "description": "Open a URL in the system web browser",
+        "parameters": {
+          "url": {"type": "string", "inputType": "text", "required": true, "description": "The URL to open (http, https, file)"},
+          "new": {"type": "number", "inputType": "select", "default": 1, "options": [0, 1], "description": "0=same window, 1=new window"}
+        },
+        "outputs": {
+          "success": {"type": "boolean"},
+          "url": {"type": "string"},
+          "error": {"type": "string"}
+        }
+      }
+    }
+  ],
+  "integrations": [
+    {
+      "service": "open-url-toolkit",
+      "capability": "preview",
+      "description": "Preview dashboard PNGs in AGNT with authorize button flow"
+    }
+  ]
+}

@@ -1,0 +1,173 @@
+{
+  "name": "ecosystem-telemetry-hub",
+  "version": "1.0.0",
+  "description": "Unified ecosystem telemetry, emergence detection, and cold-storage registry. Connects all AGNT plugins into a single observable system with real-time health monitoring, cross-system correlation, and self-organization detection.",
+  "author": "jacksonjp0311-gif / Annie",
+  "icon": "activity",
+  "tools": [
+    {
+      "type": "ecosystem-status",
+      "entryPoint": "./ecosystem-status.js",
+      "schema": {
+        "title": "Ecosystem Status",
+        "category": "utility",
+        "type": "ecosystem-status",
+        "icon": "activity",
+        "description": "Get unified health and status of all installed plugins — version, tool count, errors, orphaned status, dev-folder presence. The single-pane-of-glass view of the AGNT plugin ecosystem.",
+        "parameters": {
+          "include_details": {
+            "type": "checkbox",
+            "title": "Include Plugin Details",
+            "description": "Include full tool schemas and source-file listings for each plugin",
+            "default": false
+          },
+          "filter": {
+            "type": "select",
+            "title": "Filter",
+            "description": "Which plugins to include",
+            "options": [
+              {
+                "value": "all",
+                "label": "All Plugins"
+              },
+              {
+                "value": "local",
+                "label": "Local Dev Plugins (built by us)"
+              },
+              {
+                "value": "built-in",
+                "label": "Built-in/Marketplace Plugins"
+              },
+              {
+                "value": "orphaned",
+                "label": "Orphaned (installed, no dev source)"
+              },
+              {
+                "value": "ecosystem",
+                "label": "Ecosystem Core (neuralforge, triadix, tessera, chemiframe, etc.)"
+              }
+            ],
+            "default": "all"
+          }
+        },
+        "outputs": {
+          "report": {
+            "type": "string",
+            "description": "Formatted ecosystem status report"
+          },
+          "summary": {
+            "type": "object",
+            "description": "Total plugins, total tools, health score, category breakdown"
+          },
+          "plugin_matrix": {
+            "type": "array",
+            "description": "Per-plugin status array"
+          }
+        }
+      }
+    },
+    {
+      "type": "emergence-detect",
+      "entryPoint": "./emergence-detect.js",
+      "schema": {
+        "title": "Emergence Detector",
+        "category": "utility",
+        "type": "emergence-detect",
+        "icon": "eye",
+        "description": "Detect emergent behavior and self-organization patterns in the plugin ecosystem. Identifies: cross-plugin capability chaining, redundant tools (overlap detection), missing capability gaps, emergent tool compositions that could be new plugins.",
+        "parameters": {
+          "analysis_depth": {
+            "type": "select",
+            "title": "Analysis Depth",
+            "description": "How deep to analyze cross-plugin patterns",
+            "options": [
+              {
+                "value": "fast",
+                "label": "Fast — basic overlap & gap detection"
+              },
+              {
+                "value": "deep",
+                "label": "Deep — full capability clustering & composition analysis"
+              },
+              {
+                "value": "comprehensive",
+                "label": "Comprehensive — everything plus trend analysis over time"
+              }
+            ],
+            "default": "deep"
+          },
+          "include_recommendations": {
+            "type": "checkbox",
+            "title": "Include Evolution Recommendations",
+            "description": "Generate actionable recommendations based on detected patterns",
+            "default": true
+          }
+        },
+        "outputs": {
+          "report": {
+            "type": "string",
+            "description": "Emergence detection report"
+          },
+          "emergence_signals": {
+            "type": "array",
+            "description": "Detected emergent patterns"
+          },
+          "recommendations": {
+            "type": "array",
+            "description": "Actionable evolution recommendations"
+          }
+        }
+      }
+    },
+    {
+      "type": "cold-storage-sync",
+      "entryPoint": "./cold-storage-sync.js",
+      "schema": {
+        "title": "Cold Storage Sync",
+        "category": "utility",
+        "type": "cold-storage-sync",
+        "icon": "upload-cloud",
+        "description": "Sync plugin source code to GitHub cold storage (AGNT-PLUGINS/src/). Shows which plugins are backed up, which are orphaned, and what's drifted.",
+        "parameters": {
+          "mode": {
+            "type": "select",
+            "title": "Sync Mode",
+            "options": [
+              {
+                "value": "status",
+                "label": "Status — show backup state without syncing"
+              },
+              {
+                "value": "dry-run",
+                "label": "Dry Run — show what would sync without doing it"
+              },
+              {
+                "value": "full",
+                "label": "Full — backup all local plugins to cold storage report"
+              }
+            ],
+            "default": "status"
+          }
+        },
+        "outputs": {
+          "report": {
+            "type": "string",
+            "description": "Cold storage sync report"
+          },
+          "synced": {
+            "type": "array",
+            "description": "Plugins in cold storage"
+          },
+          "unsynced": {
+            "type": "array",
+            "description": "Plugins NOT in cold storage"
+          },
+          "drifted": {
+            "type": "array",
+            "description": "Installed plugins whose source differs from cold storage"
+          }
+        }
+      }
+    }
+  ]
+}

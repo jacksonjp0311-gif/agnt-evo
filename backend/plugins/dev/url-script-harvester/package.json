@@ -1,0 +1,7 @@
+{
+  "name": "url-script-harvester",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "url-script-harvester.js",
+  "dependencies": {}
+}

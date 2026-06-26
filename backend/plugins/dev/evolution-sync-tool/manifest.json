@@ -1,0 +1,39 @@
+{
+  "name": "evolution-sync-tool",
+  "version": "1.0.0",
+  "description": "Universal Evolution Sync - pulls updates from AGNT-PLUGINS cold storage into local agnt-evo, builds, installs, and pushes back. The git-level bridge between cold storage and live execution.",
+  "author": "jacksonjp0311-gif / Annie",
+  "icon": "refresh",
+  "tools": [
+    {
+      "type": "sync-pull",
+      "entryPoint": "./sync-pull.js",
+      "schema": {
+        "title": "Sync Pull",
+        "description": "Pull latest plugin source from AGNT-PLUGINS GitHub cold storage into local agnt-evo dev folder.",
+        "parameters": {},
+        "outputs": {}
+      }
+    },
+    {
+      "type": "sync-push",
+      "entryPoint": "./sync-push.js",
+      "schema": {
+        "title": "Sync Push",
+        "description": "Push local dev plugins to AGNT-PLUGINS GitHub cold storage.",
+        "parameters": {},
+        "outputs": {}
+      }
+    },
+    {
+      "type": "git-pull-updates",
+      "entryPoint": "./git-pull-updates.js",
+      "schema": {
+        "title": "Git Pull Updates",
+        "description": "Pull latest commits from upstream agnt-evo repo on GitHub.",
+        "parameters": {},
+        "outputs": {}
+      }
+    }
+  ]
+}

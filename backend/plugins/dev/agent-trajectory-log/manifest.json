@@ -1,0 +1,126 @@
+{
+  "name": "agent-trajectory-log",
+  "version": "1.0.0",
+  "description": "Real-time agent trajectory monitoring, loop detection, and self-correction. Logs every tool call Annie makes, detects when she is looping/stuck/degrading, and provides trusted/abstain signals.",
+  "author": "jacksonjp0311-gif / Annie",
+  "icon": "activity",
+  "tools": [
+    {
+      "type": "trajectory-log",
+      "entryPoint": "./trajectory-log.js",
+      "schema": {
+        "title": "Log Trajectory Point",
+        "category": "action",
+        "type": "trajectory-log",
+        "icon": "activity",
+        "description": "Log a single agent action to the trajectory stream. Call before/after every tool execution to build a real-time picture of agent behavior.",
+        "parameters": {
+          "action_type": {
+            "type": "select",
+            "title": "Action Type",
+            "options": [
+              { "value": "tool_call", "label": "Tool Call" },
+              { "value": "tool_result", "label": "Tool Result" },
+              { "value": "decision", "label": "Decision Made" },
+              { "value": "error", "label": "Error Encountered" },
+              { "value": "correction", "label": "Self-Correction" },
+              { "value": "loop_detected", "label": "Loop Detected" }
+            ],
+            "default": "tool_call"
+          },
+          "tool_name": {
+            "type": "text",
+            "title": "Tool Name",
+            "description": "Name of the tool being called (e.g. web_search, execute_javascript_code)"
+          },
+          "session_id": {
+            "type": "text",
+            "title": "Session ID",
+            "description": "Current session identifier"
+          },
+          "context": {
+            "type": "textarea", "title": "Context",
+            "description": "Brief description of what was happening"
+          },
+          "success": {
+            "type": "checkbox",
+            "title": "Success",
+            "description": "Whether the action succeeded",
+            "default": true
+          }
+        },
+        "outputs": {
+          "logged": { "type": "boolean", "description": "Whether the point was logged" },
+          "trajectory_length": { "type": "integer", "description": "Current trajectory length" }
+        }
+      }
+    },
+    {
+      "type": "trajectory-analyze",
+      "entryPoint": "./trajectory-analyze.js",
+      "schema": {
+        "title": "Analyze Trajectory",
+        "category": "utility",
+        "type": "trajectory-analyze",
+        "icon": "eye",
+        "description": "Analyze the current agent trajectory for patterns: loops, degradation, stuck states, error rates. Returns trust/abstain signal. This is the emergence-detection engine for agent behavior.",
+        "parameters": {
+          "window_size": {
+            "type": "integer",
+            "title": "Analysis Window",
+            "description": "How many recent trajectory points to analyze",
+            "default": 20
+          },
+          "include_recommendations": {
+            "type": "checkbox",
+            "title": "Include Recommendations",
+            "description": "Generate actionable self-correction recommendations",
+            "default": true
+          }
+        },
+        "outputs": {
+          "signal": { "type": "string", "description": "TRUST, ABSTAIN, LOOP_DETECT, DEGRADED, or STUCK" },
+          "confidence": { "type": "number", "description": "Confidence 0-1" },
+          "patterns": { "type": "array", "description": "Detected patterns" },
+          "recommendations": { "type": "array", "description": "Self-correction recommendations" },
+          "error_rate": { "type": "number", "description": "Error rate in window" },
+          "report": { "type": "string", "description": "Full analysis report" }
+        }
+      }
+    },
+    {
+      "type": "trajectory-recall",
+      "entryPoint": "./trajectory-recall.js",
+      "schema": {
+        "title": "Recall Trajectory",
+        "category": "utility",
+        "type": "trajectory-recall",
+        "icon": "search",
+        "description": "Search and recall past trajectory data. Find specific tool calls, error patterns, or decision chains from the current session or recent sessions.",
+        "parameters": {
+          "query": {
+            "type": "text",
+            "title": "Search Query",
+            "description": "Search for specific tool names, error types, or patterns"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit",
+            "description": "Max results to return",
+            "default": 20
+          },
+          "session_id": {
+            "type": "text",
+            "title": "Session ID",
+            "description": "Specific session to search (default: current)"
+          }
+        },
+        "outputs": {
+          "results": { "type": "array", "description": "Matching trajectory points" },
+          "count": { "type": "integer", "description": "Total matches found" },
+          "sessions": { "type": "array", "description": "Sessions containing matches" }
+        }
+      }
+    }
+  ]
+}

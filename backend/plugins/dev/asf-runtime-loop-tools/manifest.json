@@ -1,0 +1,774 @@
+{
+  "name": "asf-runtime-loop-tools",
+  "displayName": "ASF Runtime Loop Tools",
+  "version": "0.5.1",
+  "description": "ASF-R marketplace tools: Inline Run (one call, with progress + geometry UI) + Doctor + Full Loop Summary + Geometry Server manager.",
+  "author": "James Paul Jackson",
+  "icon": "terminal",
+  "homepage": "https://github.com/jacksonjp0311-gif/ai-survival-field",
+  "tools": [
+    {
+      "type": "asf-inline-run",
+      "entryPoint": "./asf-inline-run.js",
+      "schema": {
+        "title": "ASF Inline Run",
+        "category": "action",
+        "type": "asf-inline-run",
+        "icon": "terminal",
+        "description": "One-call ASF-R runner: auto-fetch repo, create venv, install ASF-R, optionally launch the Triadic Geometry Console, run full loop, and return a formatted summary + structured decision outputs.",
+        "parameters": {
+          "allowWrites": {
+            "type": "string",
+            "inputType": "select",
+            "required": true,
+            "options": [
+              "false",
+              "true"
+            ],
+            "default": "false",
+            "description": "Required. ASF-R writes .asf_loop_runs and may perform bounded local repairs within policy scope."
+          },
+          "repoRoot": {
+            "type": "string",
+            "inputType": "text",
+            "required": false,
+            "description": "Optional. If blank and autoFetchRepo=true, repo is cloned into plugin-data."
+          },
+          "autoFetchRepo": {
+            "type": "string",
+            "inputType": "select",
+            "required": true,
+            "options": [
+              "false",
+              "true"
+            ],
+            "default": "true",
+            "description": "If true and repoRoot blank, clone ASF repo into plugin-data."
+          },
+          "repoGitUrl": {
+            "type": "string",
+            "inputType": "text",
+            "required": false,
+            "default": "https://github.com/jacksonjp0311-gif/ai-survival-field.git",
+            "description": "Git URL used when autoFetchRepo=true."
+          },
+          "repoGitRef": {
+            "type": "string",
+            "inputType": "text",
+            "required": false,
+            "default": "",
+            "description": "Optional branch/tag to clone (best-effort)."
+          },
+          "updateRepo": {
+            "type": "string",
+            "inputType": "select",
+            "required": true,
+            "options": [
+              "false",
+              "true"
+            ],
+            "default": "true",
+            "description": "If true, attempt git pull --ff-only when repo already exists."
+          },
+          "installSource": {
+            "type": "string",
+            "inputType": "select",
+            "required": true,
+            "options": [
+              "repo",
+              "packageSpec"
+            ],
+            "default": "repo",
+            "description": "How to install ASF-R into the tool-managed venv."
+          },
+          "packageSpec": {
+            "type": "string",
+            "inputType": "text",
+            "required": false,
+            "default": "git+https://github.com/jacksonjp0311-gif/ai-survival-field.git",
+            "description": "Used when installSource=packageSpec."
+          },
+          "upgradePackage": {
+            "type": "string",
+            "inputType": "select",
+            "required": true,
+            "options": [
+              "false",
+              "true"
+            ],
+            "default": "false",
+            "description": "If true, forces pip --upgrade on install."
+          },
+          "pythonExe": {
+            "type": "string",
+            "inputType": "text",
+            "required": false,
+            "default": "python",
+            "description": "System python used only to create the venv."
+          },
+          "runTests": {
+            "type": "string",
+            "inputType": "select",
+            "required": true,
+            "options": [
+              "false",
+              "true"
+            ],
+            "default": "false",
+            "description": "Optional. If true, run unit tests before the loop and fail closed if tests fail."
+          },
+          "geometryArtifacts": {
+            "type": "string",
+            "inputType": "select",
+            "required": true,
+            "options": [
+              "false",
+              "true"
+            ],
+            "default": "false",
+            "description": "If true, passes --geometry to asf.full_loop to generate geometry artifacts."
+          },
+          "launchGeometryServer": {
+            "type": "string",
+            "inputType": "select",
+            "required": true,
+            "options": [
+              "false",
+              "true"
+            ],
+            "default": "true",
+            "description": "If true, starts the read-only Triadic Geometry Console server and returns geometryUrl."
+          },
+          "geometryHost": {
+            "type": "string",
+            "inputType": "text",
+            "required": false,
+            "default": "127.0.0.1",
+            "description": "Host for geometry server."
+          },
+          "geometryPort": {
+            "type": "number",
+            "inputType": "number",
+            "required": false,
+            "default": 8765,
+            "minimum": 0,
+            "maximum": 65535,
+            "description": "Port for geometry server. Use 0 to auto-select a free port."
+          },
+          "timeoutSeconds": {
+            "type": "number",
+            "inputType": "number",
+            "required": false,
+            "default": 1200,
+            "minimum": 10,
+            "maximum": 3600,
+            "description": "Overall timeout for install + loop."
+          },
+          "autoPortOnConflict": {
+            "type": "string",
+            "inputType": "select",
+            "required": true,
+            "options": [
+              "false",
+              "true"
+            ],
+            "default": "true",
+            "description": "If true and geometryPort is already in use, automatically select a free port."
+          }
+        },
+        "outputs": {
+          "success": {
+            "type": "boolean",
+            "description": "Whether the tool completed successfully."
+          },
+          "summaryMarkdown": {
+            "type": "string",
+            "description": "Formatted markdown summary ready to display in chat/UI."
+          },
+          "geometryUrl": {
+            "type": "string",
+            "description": "URL of Triadic Geometry Console (if launched)."
+          },
+          "geometryStarted": {
+            "type": "boolean",
+            "description": "Whether geometry server was started by this run."
+          },
+          "geometryPid": {
+            "type": "number",
+            "description": "PID of geometry server if started."
+          },
+          "runId": {
+            "type": "string",
+            "description": "ASF run_id"
+          },
+          "summaryPath": {
+            "type": "string",
+            "description": "Absolute path to summary.json"
+          },
+          "decision": {
+            "type": "object",
+            "description": "Decision object from summary.json"
+          },
+          "blockedActions": {
+            "type": "array",
+            "description": "Actions blocked by policy gates"
+          },
+          "permittedActions": {
+            "type": "array",
+            "description": "Actions permitted under current evidence"
+          },
+          "missingGates": {
+            "type": "array",
+            "description": "Missing gate objects that block promotion"
+          },
+          "permissionCeiling": {
+            "type": "string",
+            "description": "Permission ceiling"
+          },
+          "nonClaimLock": {
+            "type": "string",
+            "description": "Non-claim lock string"
+          },
+          "repoDir": {
+            "type": "string",
+            "description": "Resolved repo directory used for the run."
+          },
+          "repoCloned": {
+            "type": "boolean",
+            "description": "Whether the repo was cloned during this run."
+          },
+          "venvDir": {
+            "type": "string",
+            "description": "Path to tool-managed venv directory."
+          },
+          "venvPython": {
+            "type": "string",
+            "description": "Path to venv python executable used."
+          },
+          "install": {
+            "type": "object",
+            "description": "Install/venv info."
+          },
+          "tests": {
+            "type": "object",
+            "description": "Test results (if runTests=true)"
+          },
+          "woundPackage": {
+            "type": "object",
+            "description": "Wound package if present"
+          },
+          "ciEvidence": {
+            "type": "object",
+            "description": "CI evidence if present"
+          },
+          "stdout": {
+            "type": "string",
+            "description": "Raw stdout from full loop"
+          },
+          "stderr": {
+            "type": "string",
+            "description": "Raw stderr from full loop"
+          },
+          "error": {
+            "type": "string",
+            "description": "Error message if failed."
+          },
+          "phase": {
+            "type": "string",
+            "description": "Last phase reached (e.g., resolve_repo, ensure_venv, install_asf, geometry_server, run_full_loop, done)."
+          },
+          "startedAt": {
+            "type": "string",
+            "description": "ISO timestamp when execution started."
+          },
+          "endedAt": {
+            "type": "string",
+            "description": "ISO timestamp when execution ended."
+          },
+          "durationMs": {
+            "type": "number",
+            "description": "Total duration in milliseconds."
+          },
+          "steps": {
+            "type": "array",
+            "description": "Step-by-step execution record with ok/ms/message."
+          },
+          "geometryLogPath": {
+            "type": "string",
+            "description": "Path to geometry server log file (if geometry was enabled)."
+          },
+          "geometryServerStatus": {
+            "type": "string",
+            "description": "Geometry server status: disabled | started | already_running | start_attempted_not_ready."
+          },
+          "geometryPort": {
+            "type": "number",
+            "description": "The actual geometry port in use (after auto-selection)."
+          }
+        }
+      }
+    },
+    {
+      "type": "asf-runtime-doctor",
+      "entryPoint": "./asf-doctor.js",
+      "schema": {
+        "title": "ASF Runtime Doctor",
+        "category": "utility",
+        "type": "asf-runtime-doctor",
+        "icon": "terminal",
+        "description": "Verifies Python + venv + install + repo layout + write permissions. Can auto-fetch the ASF repo into plugin-data for one-click setup.",
+        "parameters": {
+          "repoRoot": {
+            "type": "string",
+            "inputType": "text",
+            "required": false,
+            "description": "Optional. If empty and autoFetchRepo=true, the tool clones ASF into plugin-data and uses that."
+          },
+          "autoFetchRepo": {
+            "type": "string",
+            "inputType": "select",
+            "required": true,
+            "options": [
+              "false",
+              "true"
+            ],
+            "default": "true",
+            "description": "If true and repoRoot is blank, clone ASF repo into plugin-data."
+          },
+          "repoGitUrl": {
+            "type": "string",
+            "inputType": "text",
+            "required": false,
+            "default": "https://github.com/jacksonjp0311-gif/ai-survival-field.git",
+            "description": "Git URL used when autoFetchRepo=true."
+          },
+          "repoGitRef": {
+            "type": "string",
+            "inputType": "text",
+            "required": false,
+            "default": "",
+            "description": "Optional branch/tag to clone (best-effort)."
+          },
+          "updateRepo": {
+            "type": "string",
+            "inputType": "select",
+            "required": true,
+            "options": [
+              "false",
+              "true"
+            ],
+            "default": "true",
+            "description": "If true, attempt git pull --ff-only when repo already exists."
+          },
+          "installSource": {
+            "type": "string",
+            "inputType": "select",
+            "required": true,
+            "options": [
+              "repo",
+              "packageSpec"
+            ],
+            "default": "repo",
+            "description": "How to install ASF-R into the tool-managed venv."
+          },
+          "packageSpec": {
+            "type": "string",
+            "inputType": "text",
+            "required": false,
+            "default": "git+https://github.com/jacksonjp0311-gif/ai-survival-field.git",
+            "description": "Used when installSource=packageSpec."
+          },
+          "upgradePackage": {
+            "type": "string",
+            "inputType": "select",
+            "required": true,
+            "options": [
+              "false",
+              "true"
+            ],
+            "default": "false",
+            "description": "If true, forces pip --upgrade on install."
+          },
+          "pythonExe": {
+            "type": "string",
+            "inputType": "text",
+            "required": false,
+            "default": "python",
+            "description": "System python used only to create the venv."
+          },
+          "timeoutSeconds": {
+            "type": "number",
+            "inputType": "number",
+            "required": false,
+            "default": 300,
+            "minimum": 10,
+            "maximum": 1800,
+            "description": "Timeout for doctor steps."
+          }
+        },
+        "outputs": {
+          "ok": {
+            "type": "boolean",
+            "description": "All checks passed."
+          },
+          "checks": {
+            "type": "array",
+            "description": "Array of check results with id/ok/message."
+          },
+          "repoDir": {
+            "type": "string",
+            "description": "Resolved repo directory used for checks."
+          },
+          "repoCloned": {
+            "type": "boolean",
+            "description": "Whether the repo was cloned during this run."
+          },
+          "venvDir": {
+            "type": "string",
+            "description": "Path to tool-managed venv directory."
+          },
+          "venvPython": {
+            "type": "string",
+            "description": "Path to venv python executable."
+          },
+          "install": {
+            "type": "object",
+            "description": "Install details (pip output etc.)."
+          },
+          "error": {
+            "type": "string",
+            "description": "Error message if failed."
+          }
+        }
+      }
+    },
+    {
+      "type": "asf-full-loop-summary",
+      "entryPoint": "./asf-full-loop-summary.js",
+      "schema": {
+        "title": "ASF Full Loop Summary",
+        "category": "action",
+        "type": "asf-full-loop-summary",
+        "icon": "terminal",
+        "description": "One-click ASF-R: optionally auto-fetches the repo, creates/uses a venv, installs ASF-R, runs python -m asf.full_loop, and parses summary.json into typed outputs.",
+        "parameters": {
+          "repoRoot": {
+            "type": "string",
+            "inputType": "text",
+            "required": false,
+            "description": "Optional. If blank and autoFetchRepo=true, the tool clones ASF into plugin-data and uses that.",
+            "placeholder": "C:\\Users\\jacks\\OneDrive\\Desktop\\ai-survival-field"
+          },
+          "runTests": {
+            "type": "string",
+            "inputType": "select",
+            "required": true,
+            "description": "Whether to run python -m unittest discover tests before the loop.",
+            "options": [
+              "false",
+              "true"
+            ],
+            "default": "false"
+          },
+          "geometry": {
+            "type": "string",
+            "inputType": "select",
+            "required": true,
+            "description": "Whether to pass --geometry to asf.full_loop (may launch geometry capture).",
+            "options": [
+              "false",
+              "true"
+            ],
+            "default": "false"
+          },
+          "pythonExe": {
+            "type": "string",
+            "inputType": "text",
+            "required": false,
+            "description": "Python executable to use (defaults to \"python\").",
+            "default": "python"
+          },
+          "allowWrites": {
+            "type": "string",
+            "inputType": "select",
+            "required": true,
+            "description": "ASF-R writes to .asf_loop_runs and may perform bounded local repairs within its policy scope. Set true to proceed.",
+            "options": [
+              "false",
+              "true"
+            ],
+            "default": "false"
+          },
+          "timeoutSeconds": {
+            "type": "number",
+            "inputType": "number",
+            "required": false,
+            "description": "Maximum time to allow the full loop to run before aborting.",
+            "minimum": 10,
+            "maximum": 1800,
+            "default": 600
+          },
+          "packageSpec": {
+            "type": "string",
+            "inputType": "text",
+            "required": false,
+            "description": "pip install spec for ASF-R (PyPI name or VCS URL). Default installs from GitHub.",
+            "default": "git+https://github.com/jacksonjp0311-gif/ai-survival-field.git"
+          },
+          "upgradePackage": {
+            "type": "string",
+            "inputType": "select",
+            "required": true,
+            "description": "If true, forces pip install --upgrade for the ASF-R package spec.",
+            "options": [
+              "false",
+              "true"
+            ],
+            "default": "false"
+          },
+          "autoFetchRepo": {
+            "type": "string",
+            "inputType": "select",
+            "required": true,
+            "options": [
+              "false",
+              "true"
+            ],
+            "default": "true",
+            "description": "If true and repoRoot is blank, clone ASF repo into plugin-data."
+          },
+          "repoGitUrl": {
+            "type": "string",
+            "inputType": "text",
+            "required": false,
+            "default": "https://github.com/jacksonjp0311-gif/ai-survival-field.git",
+            "description": "Git URL used when autoFetchRepo=true."
+          },
+          "repoGitRef": {
+            "type": "string",
+            "inputType": "text",
+            "required": false,
+            "default": "",
+            "description": "Optional branch/tag to clone (best-effort)."
+          },
+          "updateRepo": {
+            "type": "string",
+            "inputType": "select",
+            "required": true,
+            "options": [
+              "false",
+              "true"
+            ],
+            "default": "true",
+            "description": "If true, attempt git pull --ff-only when repo already exists."
+          },
+          "installSource": {
+            "type": "string",
+            "inputType": "select",
+            "required": true,
+            "options": [
+              "repo",
+              "packageSpec"
+            ],
+            "default": "repo",
+            "description": "How to install ASF-R into the tool-managed venv."
+          }
+        },
+        "outputs": {
+          "success": {
+            "type": "boolean",
+            "description": "Whether the tool completed successfully"
+          },
+          "runId": {
+            "type": "string",
+            "description": "ASF run_id"
+          },
+          "summaryPath": {
+            "type": "string",
+            "description": "Absolute path to the summary.json file"
+          },
+          "decision": {
+            "type": "object",
+            "description": "Decision object from summary.json"
+          },
+          "blockedActions": {
+            "type": "array",
+            "description": "Actions blocked by policy gates"
+          },
+          "permittedActions": {
+            "type": "array",
+            "description": "Actions permitted under current evidence"
+          },
+          "missingGates": {
+            "type": "array",
+            "description": "Missing gate objects that block promotion"
+          },
+          "permissionCeiling": {
+            "type": "string",
+            "description": "Permission ceiling from summary.json"
+          },
+          "nonClaimLock": {
+            "type": "string",
+            "description": "Non-claim lock message from summary.json"
+          },
+          "woundPackage": {
+            "type": "object",
+            "description": "Wound package object (if present)"
+          },
+          "ciEvidence": {
+            "type": "object",
+            "description": "CI evidence object (if present)"
+          },
+          "tests": {
+            "type": "object",
+            "description": "Test run result (if runTests=true)"
+          },
+          "stdout": {
+            "type": "string",
+            "description": "Raw stdout from the full loop command"
+          },
+          "stderr": {
+            "type": "string",
+            "description": "Raw stderr from the full loop command"
+          },
+          "error": {
+            "type": "string",
+            "description": "Error message if failed"
+          },
+          "install": {
+            "type": "object",
+            "description": "Install/venv info for ASF-R runtime."
+          },
+          "venvDir": {
+            "type": "string",
+            "description": "Path to tool-managed venv directory."
+          },
+          "venvPython": {
+            "type": "string",
+            "description": "Path to venv python executable used."
+          },
+          "repoDir": {
+            "type": "string",
+            "description": "Resolved repo directory used for the run."
+          },
+          "repoCloned": {
+            "type": "boolean",
+            "description": "Whether the repo was cloned during this run."
+          }
+        }
+      }
+    },
+    {
+      "type": "asf-geometry-server",
+      "entryPoint": "./asf-geometry-server.js",
+      "schema": {
+        "title": "ASF Geometry Server",
+        "category": "utility",
+        "type": "asf-geometry-server",
+        "icon": "terminal",
+        "description": "Start/stop/status for the read-only Triadic Geometry Console server (runs locally).",
+        "parameters": {
+          "action": {
+            "type": "string",
+            "inputType": "select",
+            "required": true,
+            "options": [
+              "status",
+              "start",
+              "stop"
+            ],
+            "default": "status",
+            "description": "Operation to perform."
+          },
+          "repoRoot": {
+            "type": "string",
+            "inputType": "text",
+            "required": false,
+            "description": "Required for action=start. Path to ASF repo root."
+          },
+          "pythonExe": {
+            "type": "string",
+            "inputType": "text",
+            "required": false,
+            "default": "python",
+            "description": "System python used only to create the venv if missing."
+          },
+          "geometryHost": {
+            "type": "string",
+            "inputType": "text",
+            "required": false,
+            "default": "127.0.0.1",
+            "description": "Host for the server."
+          },
+          "geometryPort": {
+            "type": "number",
+            "inputType": "number",
+            "required": false,
+            "default": 8765,
+            "minimum": 0,
+            "maximum": 65535,
+            "description": "Port for the server. Use 0 to auto-select."
+          },
+          "autoPortOnConflict": {
+            "type": "string",
+            "inputType": "select",
+            "required": true,
+            "options": [
+              "false",
+              "true"
+            ],
+            "default": "true",
+            "description": "If true and port is in use, choose a free port."
+          },
+          "timeoutSeconds": {
+            "type": "number",
+            "inputType": "number",
+            "required": false,
+            "default": 120,
+            "minimum": 5,
+            "maximum": 1800,
+            "description": "Timeout for start checks."
+          }
+        },
+        "outputs": {
+          "success": {
+            "type": "boolean",
+            "description": "Whether the operation succeeded."
+          },
+          "action": {
+            "type": "string",
+            "description": "Action performed."
+          },
+          "running": {
+            "type": "boolean",
+            "description": "Whether a geometry server appears to be running."
+          },
+          "pid": {
+            "type": "number",
+            "description": "Server PID if known."
+          },
+          "geometryUrl": {
+            "type": "string",
+            "description": "URL of the geometry console."
+          },
+          "geometryLogPath": {
+            "type": "string",
+            "description": "Path to geometry server log file."
+          },
+          "serverStatus": {
+            "type": "string",
+            "description": "start status message."
+          },
+          "meta": {
+            "type": "object",
+            "description": "Saved metadata (if present)."
+          },
+          "error": {
+            "type": "string",
+            "description": "Error message if failed."
+          }
+        }
+      }
+    }
+  ]
+}

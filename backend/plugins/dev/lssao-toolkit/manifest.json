@@ -1,0 +1,308 @@
+{
+  "name": "lssao-toolkit",
+  "version": "0.2.0",
+  "description": "Lean Six Sigma Agent Operations toolkit: capability, SPC, DOE, evidence gates, flow analysis, plus audit workflow helpers.",
+  "author": "James Paul Jackson",
+  "icon": "chart",
+  "displayName": "LSSAO Toolkit",
+  "tools": [
+    {
+      "type": "lssao-capability-calc",
+      "entryPoint": "./lssao-capability-calc.js",
+      "schema": {
+        "title": "LSSAO Capability Calculator",
+        "category": "utility",
+        "type": "lssao-capability-calc",
+        "icon": "calculator",
+        "description": "Compute Cp/Cpk, defect probability, DPMO, and sigma approximation for continuous metrics, or compute DPMO/sigma from defect counts.",
+        "parameters": {
+          "mode": {
+            "type": "string",
+            "inputType": "select",
+            "options": [
+              "CONTINUOUS_NORMAL",
+              "DEFECTS_DPMO"
+            ],
+            "required": true,
+            "description": "Calculation mode"
+          },
+          "samplesJson": {
+            "type": "string",
+            "inputType": "codearea",
+            "required": false,
+            "description": "JSON array of numeric samples (CONTINUOUS_NORMAL mode)"
+          },
+          "lsl": {
+            "type": "number",
+            "inputType": "number",
+            "required": false,
+            "description": "Lower specification limit"
+          },
+          "usl": {
+            "type": "number",
+            "inputType": "number",
+            "required": false,
+            "description": "Upper specification limit"
+          },
+          "defects": {
+            "type": "number",
+            "inputType": "number",
+            "required": false,
+            "description": "Defect count"
+          },
+          "units": {
+            "type": "number",
+            "inputType": "number",
+            "required": false,
+            "description": "Units/tasks count"
+          },
+          "opportunities": {
+            "type": "number",
+            "inputType": "number",
+            "required": false,
+            "description": "Opportunities per unit"
+          }
+        },
+        "outputs": {
+          "success": {
+            "type": "boolean"
+          },
+          "result": {
+            "type": "object"
+          },
+          "error": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "type": "lssao-spc-analyze",
+      "entryPoint": "./lssao-spc-analyze.js",
+      "schema": {
+        "title": "LSSAO SPC Analyzer",
+        "category": "utility",
+        "type": "lssao-spc-analyze",
+        "icon": "chart",
+        "description": "Compute mean/stdev control limits and detect special-cause signals on a numeric time series.",
+        "parameters": {
+          "seriesJson": {
+            "type": "string",
+            "inputType": "codearea",
+            "required": true,
+            "description": "JSON array of numeric observations (time-ordered)"
+          },
+          "sigmaMultiplier": {
+            "type": "number",
+            "inputType": "number",
+            "required": false,
+            "description": "Sigma multiplier (default 3)"
+          }
+        },
+        "outputs": {
+          "success": {
+            "type": "boolean"
+          },
+          "result": {
+            "type": "object"
+          },
+          "error": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "type": "lssao-evidence-gate",
+      "entryPoint": "./lssao-evidence-gate.js",
+      "schema": {
+        "title": "LSSAO Evidence Gate Evaluator",
+        "category": "utility",
+        "type": "lssao-evidence-gate",
+        "icon": "lock",
+        "description": "Evaluate an evidence gate for promoting an agent change.",
+        "parameters": {
+          "baselineJson": {
+            "type": "string",
+            "inputType": "codearea",
+            "required": true
+          },
+          "candidateJson": {
+            "type": "string",
+            "inputType": "codearea",
+            "required": true
+          },
+          "thresholdsJson": {
+            "type": "string",
+            "inputType": "codearea",
+            "required": false
+          }
+        },
+        "outputs": {
+          "success": {
+            "type": "boolean"
+          },
+          "result": {
+            "type": "object"
+          },
+          "error": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "type": "lssao-doe-plan",
+      "entryPoint": "./lssao-doe-plan.js",
+      "schema": {
+        "title": "LSSAO DOE Planner",
+        "category": "utility",
+        "type": "lssao-doe-plan",
+        "icon": "dice",
+        "description": "Generate a 2-level factorial or fractional randomized DOE plan.",
+        "parameters": {
+          "factorsJson": {
+            "type": "string",
+            "inputType": "codearea",
+            "required": true
+          },
+          "design": {
+            "type": "string",
+            "inputType": "select",
+            "options": [
+              "FULL_FACTORIAL",
+              "FRACTIONAL_RANDOM"
+            ],
+            "required": true
+          },
+          "runsLimit": {
+            "type": "number",
+            "inputType": "number",
+            "required": false
+          },
+          "seed": {
+            "type": "number",
+            "inputType": "number",
+            "required": false
+          }
+        },
+        "outputs": {
+          "success": {
+            "type": "boolean"
+          },
+          "result": {
+            "type": "object"
+          },
+          "error": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "type": "lssao-flow-analyze",
+      "entryPoint": "./lssao-flow-analyze.js",
+      "schema": {
+        "title": "LSSAO Flow & Queue Analyzer",
+        "category": "utility",
+        "type": "lssao-flow-analyze",
+        "icon": "graph",
+        "description": "Compute utilization and Little's Law derived metrics for pipeline stages and identify likely bottlenecks.",
+        "parameters": {
+          "stagesJson": {
+            "type": "string",
+            "inputType": "codearea",
+            "required": true
+          }
+        },
+        "outputs": {
+          "success": {
+            "type": "boolean"
+          },
+          "result": {
+            "type": "object"
+          },
+          "error": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "type": "lssao-tool-id-map",
+      "entryPoint": "./lssao-tool-id-map.js",
+      "schema": {
+        "title": "LSSAO Tool ID Map",
+        "category": "utility",
+        "type": "lssao-tool-id-map",
+        "icon": "code",
+        "description": "Map between underscore tool IDs (agent tool calls) and kebab-case endpoint names (/api/tools/<name>/execute).",
+        "parameters": {
+          "tool": {
+            "type": "string",
+            "inputType": "text",
+            "required": true,
+            "description": "Tool id/name in underscore or kebab form"
+          }
+        },
+        "outputs": {
+          "success": {
+            "type": "boolean"
+          },
+          "result": {
+            "type": "object"
+          },
+          "error": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "type": "lssao-recommendations-pack",
+      "entryPoint": "./lssao-recommendations-pack.js",
+      "schema": {
+        "title": "LSSAO Recommendations Pack",
+        "category": "utility",
+        "type": "lssao-recommendations-pack",
+        "icon": "list",
+        "description": "Return the top evidence-gated recommendations for stabilizing the auditor and making audits repeatable.",
+        "parameters": {},
+        "outputs": {
+          "success": {
+            "type": "boolean"
+          },
+          "result": {
+            "type": "object"
+          },
+          "error": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "type": "lssao-audit-workflow-blueprint",
+      "entryPoint": "./lssao-audit-workflow-blueprint.js",
+      "schema": {
+        "title": "LSSAO Audit Workflow Blueprint",
+        "category": "utility",
+        "type": "lssao-audit-workflow-blueprint",
+        "icon": "flow-3",
+        "description": "Return workflow blueprints (weekly + smoke tests) for building repeatable audit artifacts.",
+        "parameters": {},
+        "outputs": {
+          "success": {
+            "type": "boolean"
+          },
+          "result": {
+            "type": "object"
+          },
+          "error": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  ]
+}

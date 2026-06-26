@@ -1,0 +1,7 @@
+{
+  "name": "agent-trajectory-log",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "trajectory-log.js",
+  "dependencies": {}
+}

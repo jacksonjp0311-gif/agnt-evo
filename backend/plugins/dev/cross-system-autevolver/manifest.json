@@ -1,0 +1,39 @@
+{
+  "name": "cross-system-autevolver",
+  "version": "1.0.0",
+  "description": "Cross-System Evolution Orchestrator. Composes detected plugin chains into automated workflows, generates evolution proposals, detects capability gaps, and triggers self-correction. This is the autevolution layer.",
+  "author": "jacksonjp0311-gif / Annie",
+  "icon": "play",
+  "tools": [
+    {
+      "type": "autevolve",
+      "entryPoint": "./autevolve.js",
+      "schema": {
+        "title": "Autevolve",
+        "category": "action",
+        "type": "autevolve",
+        "icon": "play",
+        "description": "Run cross-system evolution analysis. Gathers state from ecosystem-status, emergence-detect, and trajectory-analyzes, then generates prioritized evolution proposals. Composes the 4 detected plugin chains into actionable workflows.",
+        "parameters": {},
+        "outputs": {
+          "report": {
+            "type": "string",
+            "description": "Full evolution report"
+          },
+          "proposals": {
+            "type": "array",
+            "description": "Prioritized evolution proposals"
+          },
+          "chains": {
+            "type": "array",
+            "description": "Active evolution chains"
+          },
+          "system_state": {
+            "type": "object",
+            "description": "Current state of all subsystems"
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,66 @@
+{
+  "name": "plugin-rehydration",
+  "version": "1.0.0",
+  "description": "Complete plugin context rehydration — scans all installed plugins, pulls source code, cross-references dev folder, and generates a comprehensive understanding report of the entire AGNT plugin ecosystem.",
+  "author": "jacksonjp0311-gif",
+  "icon": "refresh",
+  "tools": [
+    {
+      "type": "plugin-rehydration",
+      "entryPoint": "./plugin-rehydration.js",
+      "schema": {
+        "title": "Plugin Rehydration",
+        "category": "utility",
+        "type": "plugin-rehydration",
+        "icon": "refresh",
+        "description": "Rehydrate full context about the AGNT plugin system — scans installed plugins, retrieves source code, cross-references dev folder, and produces a comprehensive capability map.",
+        "parameters": {
+          "mode": {
+            "type": "select",
+            "title": "Rehydration Mode",
+            "description": "What level of detail to rehydrate",
+            "options": [
+              { "value": "full", "label": "Full — scan all plugins, pull all source, generate complete report" },
+              { "value": "scan", "label": "Scan — list installed plugins with metadata only (fast)" },
+              { "value": "orphaned", "label": "Orphaned — find plugins installed but missing from dev folder" },
+              { "value": "tools", "label": "Tools — enumerate all available tools across all plugins" },
+              { "value": "detail", "label": "Detail — deep dive into a specific plugin" }
+            ],
+            "default": "full"
+          },
+          "plugin_name": {
+            "type": "text",
+            "title": "Plugin Name",
+            "description": "For 'detail' mode — the specific plugin to deep-dive into (kebab-case name)"
+          },
+          "include_source": {
+            "type": "checkbox",
+            "title": "Include Source Code",
+            "description": "Include full source code in the report (significantly larger output)",
+            "default": false
+          },
+          "output_format": {
+            "type": "select",
+            "title": "Output Format",
+            "description": "How to structure the output",
+            "options": [
+              { "value": "markdown", "label": "Markdown — human-readable report" },
+              { "value": "json", "label": "JSON — structured data for programmatic use" }
+            ],
+            "default": "markdown"
+          }
+        },
+        "outputs": {
+          "report": {
+            "type": "string",
+            "description": "The rehydration report in the requested format"
+          },
+          "summary": {
+            "type": "object",
+            "description": "Quick summary stats: total plugins, total tools, orphaned count, dev-available count"
+          }
+        }
+      }
+    }
+  ]
+}

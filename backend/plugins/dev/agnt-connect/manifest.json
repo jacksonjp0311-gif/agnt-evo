@@ -1,0 +1,59 @@
+{
+  "name": "agnt-connect",
+  "displayName": "AGNT Connect",
+  "version": "1.0.0",
+  "description": "Terminal-style embedded chat panel with ASCII art branding, dropdown navigation, session management, and full orchestrator connectivity. Opens as an in-app panel with native AGNT dark theme design.",
+  "author": "AGNT User",
+  "icon": "terminal",
+  "tools": [
+    {
+      "type": "agnt-connect-panel",
+      "entryPoint": "./agnt-connect-panel.js",
+      "schema": {
+        "title": "AGNT Connect Panel",
+        "category": "utility",
+        "type": "agnt-connect-panel",
+        "icon": "terminal",
+        "description": "Opens AGNT Connect — a full terminal-style embedded chat panel with ASCII art branding, dropdown navigation, session management, and streaming chat. Connects to the local AGNT orchestrator backend.",
+        "parameters": {
+          "action": {
+            "type": "string",
+            "inputType": "select",
+            "required": true,
+            "options": ["open", "status"],
+            "default": "open",
+            "description": "open = render the full Connect panel HTML widget. status = return connection info JSON."
+          },
+          "sessionId": {
+            "type": "string",
+            "inputType": "text",
+            "required": false,
+            "default": "connect-default",
+            "description": "Session ID for the Connect chat session. Allows multiple independent sessions."
+          },
+          "initialMessage": {
+            "type": "string",
+            "inputType": "textarea",
+            "required": false,
+            "description": "Optional initial message to send when the panel opens."
+          },
+          "theme": {
+            "type": "string",
+            "inputType": "select",
+            "required": false,
+            "options": ["dark", "cyberpunk", "midnight", "hacker"],
+            "default": "dark",
+            "description": "Visual theme for the Connect panel."
+          }
+        },
+        "outputs": {
+          "success": { "type": "boolean", "description": "Whether the tool succeeded" },
+          "html": { "type": "string", "description": "Full HTML widget for the Connect panel (when action=open)" },
+          "sessionId": { "type": "string", "description": "The session ID used" },
+          "apiBase": { "type": "string", "description": "AGNT API base URL the panel connects to" },
+          "error": { "type": "string", "description": "Error message if failed" }
+        }
+      }
+    }
+  ]
+}

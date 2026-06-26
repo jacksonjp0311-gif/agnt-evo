@@ -1,0 +1,328 @@
+{
+  "name": "neuralforge",
+  "displayName": "NeuralForge",
+  "version": "2.3.0",
+  "description": "Build, train, optimize, and deploy neural networks from natural language. Includes DataLearner (universal data intelligence), Pattern Engine (time-series prediction), multi-objective quality prediction, and 11 AGNT marketplace tools.",
+  "author": "jacksonjp0311-gif",
+  "icon": "brain",
+  "homepage": "https://github.com/jacksonjp0311-gif/-NeuralForge",
+  "repository": "https://github.com/jacksonjp0311-gif/-NeuralForge",
+  "license": "Apache-2.0",
+  "tools": [
+    {
+      "type": "neuralforge_smart_retry",
+      "entryPoint": "./tools/smart_retry.js",
+      "schema": {
+        "title": "Smart Retry Predictor",
+        "description": "Neural network that predicts whether a failed tool call should be retried. Analyzes context (time of day, recent failures, retry count) and returns retry recommendation with confidence. 850 parameters, 81.8% accuracy.",
+        "category": "action",
+        "icon": "refresh-cw",
+        "parameters": {
+          "tool_name": {"type": "string", "required": true, "description": "Name of the tool that failed"},
+          "error_type": {"type": "string", "description": "Type of error encountered"},
+          "retry_count": {"type": "integer", "default": 0},
+          "recent_failure_rate": {"type": "number", "default": 0}
+        }
+      }
+    },
+    {
+      "type": "neuralforge_optimize_params",
+      "entryPoint": "./tools/optimize_params.js",
+      "schema": {
+        "title": "Parameter Optimizer",
+        "description": "Neural network that predicts optimal parameters (timeout, retries, backoff) for a tool call based on current context. 837 parameters.",
+        "category": "action",
+        "icon": "sliders",
+        "parameters": {
+          "tool_name": {"type": "string", "required": true},
+          "context_load": {"type": "number", "default": 0.5},
+          "data_size": {"type": "number", "default": 1000}
+        }
+      }
+    },
+    {
+      "type": "neuralforge_predict_failure",
+      "entryPoint": "./tools/predict_failure.js",
+      "schema": {
+        "title": "Failure Predictor",
+        "description": "Neural network that predicts tool call failure probability before execution. 2,945 parameters, 72.4% accuracy.",
+        "category": "action",
+        "icon": "shield",
+        "parameters": {
+          "tool_name": {"type": "string", "required": true},
+          "system_load": {"type": "number", "default": 0.5},
+          "recent_errors": {"type": "integer", "default": 0},
+          "time_of_day": {"type": "number", "default": 12}
+        }
+      }
+    },
+    {
+      "type": "neuralforge_score_quality",
+      "entryPoint": "./tools/score_quality.js",
+      "schema": {
+        "title": "Response Quality Scorer",
+        "description": "Neural network that scores tool response quality (0-1). 3,585 parameters, MSE=0.006.",
+        "category": "action",
+        "icon": "star",
+        "parameters": {
+          "response_length": {"type": "integer", "required": true},
+          "has_structure": {"type": "string", "default": "true"},
+          "response_time_ms": {"type": "number", "default": 1000},
+          "has_errors": {"type": "string", "default": "false"}
+        }
+      }
+    },
+    {
+      "type": "neuralforge_auto",
+      "entryPoint": "./tools/auto.js",
+      "schema": {
+        "title": "Auto-Evolution — Continuous AGNT Self-Improvement",
+        "description": "Automatically analyzes ALL workflow executions, filters test workflows, runs the full evolution engine, and returns health scores, predictions, and recommendations. This is the always-called tool — run it on a schedule (every 5 min) to continuously improve AGNT. Filters out test workflows like LSS Audit that dominate metrics.",
+        "category": "action",
+        "icon": "refresh-cw",
+        "parameters": {},
+        "outputs": {
+          "health_score": { "type": "number", "description": "System health percentage" },
+          "recommendations": { "type": "array", "description": "Actionable evolution recommendations" },
+          "high_risk_workflows": { "type": "array", "description": "Workflows predicted to fail" }
+        }
+      }
+    },
+    {
+      "type": "neuralforge_evolve",
+      "entryPoint": "./tools/evolve.js",
+      "schema": {
+        "title": "Evolution Engine — AGNT Self-Improvement Brain",
+        "description": "The meta-tool that makes AGNT smarter over time. Feed workflow execution history and get: (1) system health score, (2) per-workflow analysis, (3) failure predictions, (4) degradation trends, (5) actionable evolution recommendations. Uses ALL NeuralForge tools internally: Analyzer + Smart Engine + Data Learner + Pattern Engine. This is the highest-value tool because it helps AGNT evolve itself.",
+        "category": "action",
+        "icon": "trending-up",
+        "parameters": {
+          "executions": { "type": "string", "inputType": "textarea", "required": true, "description": "JSON array of execution records: {workflow_id, workflow_name, duration_ms, success, step_count, error_type, timestamp}. Min 3 records." },
+          "focus": { "type": "string", "enum": ["all", "failures", "performance", "patterns"], "default": "all", "description": "What to focus the analysis on" }
+        },
+        "outputs": {
+          "observation": { "type": "object", "description": "System health score, success rate, per-workflow stats" },
+          "learning": { "type": "object", "description": "Success trend pattern, feature importance" },
+          "predictions": { "type": "object", "description": "Per-workflow failure predictions, high-risk workflows" },
+          "optimization": { "type": "object", "description": "Duration trends, slowest workflows" },
+          "evolution": { "type": "object", "description": "Actionable recommendations, evolution stage" }
+        }
+      }
+    },
+    {
+      "type": "neuralforge_smart",
+      "entryPoint": "./tools/smart.js",
+      "schema": {
+        "title": "Smart Engine — Universal Decision Maker",
+        "description": "The always-called tool. Feed ANY data + context and get an intelligent decision: 'should I retry?' (retry), 'what's the best option?' (optimize), 'will this succeed?' (predict), 'what's the pattern?' (pattern), 'how do I fix this error?' (fix), or 'analyze this data' (analyze). Auto-detects context if not specified. Uses NeuralForge Pattern Engine + Data Learner + Workflow Analyzer. This is the tool agents call constantly because every workflow needs smart decisions.",
+        "category": "action",
+        "icon": "brain",
+        "parameters": {
+          "context": { "type": "string", "enum": ["auto", "retry", "optimize", "predict", "pattern", "fix", "analyze"], "default": "auto", "description": "What decision to make" },
+          "data": { "type": "string", "inputType": "textarea", "description": "Current data as JSON array of numbers or objects" },
+          "options": { "type": "string", "description": "Available choices as JSON array (for optimize/predict)" },
+          "history": { "type": "string", "inputType": "textarea", "description": "Past executions as JSON array of {success: true, duration_ms: 1200, error_type: 'timeout'}" }
+        },
+        "outputs": {
+          "decision": { "type": "string", "description": "The recommended action" },
+          "confidence": { "type": "number", "description": "Confidence 0-1" },
+          "reasoning": { "type": "array", "description": "Why this decision was made" },
+          "recommendations": { "type": "array", "description": "Actionable next steps" }
+        }
+      }
+    },
+    {
+      "type": "neuralforge_test",
+      "entryPoint": "./tools/test_tool.js",
+      "schema": {
+        "title": "NeuralForge Self-Test Suite",
+        "description": "Run the full NeuralForge test suite: DataLearner (4 problem types), Pattern Engine (6 patterns), Multi-Objective Quality Predictor. Returns pass/fail for every test with metrics and timing. Use this to verify the plugin is working correctly or to benchmark performance.",
+        "category": "action",
+        "icon": "check-circle",
+        "parameters": {
+          "suite": { "type": "string", "enum": ["all", "learner", "pattern", "quality"], "default": "all", "description": "Which test suite to run" },
+          "epochs": { "type": "integer", "default": 30, "description": "Training epochs per test (lower = faster)" }
+        },
+        "outputs": {
+          "total": { "type": "integer", "description": "Total tests run" },
+          "passed": { "type": "integer", "description": "Tests that passed" },
+          "all_pass": { "type": "boolean", "description": "Whether all tests passed" }
+        }
+      }
+    },
+    {
+      "type": "neuralforge_analyze",
+      "entryPoint": "./tools/analyze.js",
+      "schema": {
+        "title": "Workflow Analyzer — Predict Failures & Optimize",
+        "description": "Feed your workflow execution history (duration, success/failure, step count) and get: pattern detection (degradation trends, periodic failures), anomaly detection (outlier executions with z-scores), next execution prediction (duration + success probability), and actionable recommendations. Uses NeuralForge Pattern Engine + Data Learner. The always-called tool — every workflow owner wants to know 'will it fail next time?' and 'why is it getting slower?'",
+        "category": "action",
+        "icon": "trending-up",
+        "parameters": {
+          "executions": { "type": "string", "inputType": "textarea", "required": true, "description": "JSON array of execution records. Each: {duration_ms: 1200, success: true, step_count: 5}. Min 3 records." },
+          "predict_next": { "type": "string", "enum": ["true", "false"], "default": "true" }
+        },
+        "outputs": {
+          "stats": { "type": "object", "description": "Success rate: 95%, avg duration: 1200ms, failure count: 2" },
+          "duration_pattern": { "type": "object", "description": "Pattern: increasing trend, predicted next: [1300, 1350, 1400]" },
+          "anomalies": { "type": "object", "description": "2 outlier executions at indices [5, 12] with z-score > 2.0" },
+          "prediction": { "type": "object", "description": "Estimated next: 1350ms duration, 95% success probability, risk: low" },
+          "recommendations": { "type": "array", "description": "[performance: Duration increasing, check for resource leaks], [anomaly: 2 outliers detected]" }
+        }
+      }
+    },
+    {
+      "type": "neuralforge_learn",
+      "entryPoint": "./tools/learn.js",
+      "schema": {
+        "title": "Data Learner — Universal Data Intelligence",
+        "description": "Feed ANY dataset (features + targets) and it auto-detects the problem type (regression, classification, forecasting, anomaly), builds the right neural architecture, trains, evaluates, and returns predictions with confidence. This is the always-called tool — no other AGNT plugin can learn from data. Evidence: Regression R²=0.98, Classification Acc=98.7%, Forecast R²=0.33, Anomaly detection working. Avg training: 1.06s.",
+        "category": "action",
+        "icon": "brain",
+        "parameters": {
+          "X": { "type": "string", "inputType": "textarea", "required": true, "description": "Feature matrix as JSON 2D array. E.g. '[[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]'" },
+          "y": { "type": "string", "inputType": "textarea", "required": true, "description": "Target values as JSON array. E.g. '[0, 1, 0]' or '[3.2, 5.1, 7.8]'" },
+          "epochs": { "type": "integer", "default": 50, "description": "Training epochs" }
+        },
+        "outputs": {
+          "problem_type": { "type": "string", "description": "Auto-detected: regression, classification, forecasting, anomaly" },
+          "architecture": { "type": "string", "description": "Neural net used" },
+          "metric_name": { "type": "string", "description": "r_squared, accuracy, or anomalies_detected" },
+          "metric_value": { "type": "number", "description": "Performance metric value" },
+          "predictions": { "type": "array", "description": "Model predictions on input data" },
+          "training_time_seconds": { "type": "number" }
+        }
+      }
+    },
+    {
+      "type": "neuralforge_create",
+      "entryPoint": "./tools/create.js",
+      "schema": {
+        "title": "Create Neural Network",
+        "description": "Create a neural network from natural language. Parses architecture family (CNN, ResNet, Transformer, ViT, etc.), task type, and constraints.",
+        "category": "action", "icon": "plus-circle",
+        "parameters": {
+          "description": { "type": "string", "inputType": "textarea", "required": true, "description": "Natural language model description" }
+        }
+      }
+    },
+    {
+      "type": "neuralforge_train",
+      "entryPoint": "./tools/train.js",
+      "schema": {
+        "title": "Train Neural Network",
+        "description": "Train with AMP, EMA, learning rate scheduling, and early stopping.",
+        "category": "action", "icon": "zap",
+        "parameters": {
+          "description": { "type": "string", "inputType": "textarea", "required": true },
+          "epochs": { "type": "integer", "default": 10 },
+          "batch_size": { "type": "integer", "default": 32 },
+          "learning_rate": { "type": "number", "default": 0.001 },
+          "precision": { "type": "string", "enum": ["fp32", "fp16", "bf16", "mixed"], "default": "mixed" }
+        }
+      }
+    },
+    {
+      "type": "neuralforge_evaluate",
+      "entryPoint": "./tools/evaluate.js",
+      "schema": {
+        "title": "Evaluate Model",
+        "description": "Comprehensive evaluation with accuracy, loss, macro-F1, per-class metrics, confusion matrix, calibration error, failure analysis, and recommendations.",
+        "category": "action", "icon": "bar-chart-2",
+        "parameters": { "description": { "type": "string", "inputType": "textarea", "required": true } }
+      }
+    },
+    {
+      "type": "neuralforge_evaluate_enhanced",
+      "entryPoint": "./tools/evaluate_enhanced.js",
+      "schema": {
+        "title": "Evaluate + Quality Predictor",
+        "description": "Enhanced evaluation with multi-objective quality prediction (accuracy + latency + memory).",
+        "category": "action", "icon": "brain",
+        "parameters": {
+          "description": { "type": "string", "inputType": "textarea", "required": true },
+          "num_trials": { "type": "integer", "default": 5 }
+        }
+      }
+    },
+    {
+      "type": "neuralforge_pattern",
+      "entryPoint": "./tools/pattern.js",
+      "schema": {
+        "title": "Pattern Engine",
+        "description": "Feed ANY sequential data and it auto-detects pattern type (trend/seasonal/stationary/chaotic/step), builds matching neural architecture, trains, and predicts future values.",
+        "category": "action", "icon": "activity",
+        "parameters": {
+          "data": { "type": "string", "inputType": "textarea", "required": true, "description": "Comma-separated numbers or JSON array" },
+          "predict_steps": { "type": "integer", "default": 5 },
+          "epochs": { "type": "integer", "default": 50 }
+        }
+      }
+    },
+    {
+      "type": "neuralforge_optimize",
+      "entryPoint": "./tools/optimize.js",
+      "schema": {
+        "title": "Optimize Architecture",
+        "description": "Run hyperparameter and architecture optimization via evolutionary search.",
+        "category": "action", "icon": "sliders",
+        "parameters": {
+          "description": { "type": "string", "inputType": "textarea", "required": true },
+          "objective": { "type": "string", "enum": ["accuracy", "loss", "latency"], "default": "accuracy" },
+          "num_trials": { "type": "integer", "default": 10 }
+        }
+      }
+    },
+    {
+      "type": "neuralforge_export",
+      "entryPoint": "./tools/export.js",
+      "schema": {
+        "title": "Export Model",
+        "description": "Export to PyTorch state_dict, TorchScript, ONNX, or Safetensors.",
+        "category": "action", "icon": "download",
+        "parameters": {
+          "description": { "type": "string", "inputType": "textarea", "required": true },
+          "format": { "type": "string", "enum": ["pytorch_state_dict", "torchscript", "onnx", "safetensors"], "default": "pytorch_state_dict" },
+          "output_path": { "type": "string", "default": "./neuralforge_output" }
+        }
+      }
+    },
+    {
+      "type": "neuralforge_profile",
+      "entryPoint": "./tools/profile.js",
+      "schema": {
+        "title": "Profile Model",
+        "description": "Profile parameters, latency, throughput, GPU memory.",
+        "category": "action", "icon": "activity",
+        "parameters": { "description": { "type": "string", "inputType": "textarea", "required": true } }
+      }
+    },
+    {
+      "type": "neuralforge_prune",
+      "entryPoint": "./tools/prune.js",
+      "schema": {
+        "title": "Prune Model",
+        "description": "Prune a model to reduce size. Supports L1 unstructured and structured pruning.",
+        "category": "action", "icon": "scissors",
+        "parameters": {
+          "description": { "type": "string", "inputType": "textarea", "required": true },
+          "amount": { "type": "number", "default": 0.3 },
+          "method": { "type": "string", "enum": ["unstructured_global", "structured_l1"], "default": "unstructured_global" }
+        }
+      }
+    },
+    {
+      "type": "neuralforge_quantize",
+      "entryPoint": "./tools/quantize.js",
+      "schema": {
+        "title": "Quantize Model",
+        "description": "Quantize for efficient deployment. Supports dynamic INT8.",
+        "category": "action", "icon": "minimize-2",
+        "parameters": {
+          "description": { "type": "string", "inputType": "textarea", "required": true },
+          "method": { "type": "string", "enum": ["dynamic_int8", "gptq", "awq", "bitsandbytes"], "default": "dynamic_int8" }
+        }
+      }
+    }
+  ]
+}

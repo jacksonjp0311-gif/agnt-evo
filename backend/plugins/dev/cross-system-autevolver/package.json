@@ -1,0 +1,7 @@
+{
+  "name": "cross-system-autevolver",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "autevolve.js",
+  "dependencies": {}
+}

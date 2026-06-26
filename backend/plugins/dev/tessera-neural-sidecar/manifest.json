@@ -1,0 +1,92 @@
+{
+  "name": "tessera-neural-sidecar",
+  "displayName": "Tessera Neural Trust Layer",
+  "version": "0.4.5",
+  "description": "Neural trust layer for agent systems. Watches agent trajectory, compresses into sparse neural state, emits trusted/abstain decisions. Read-only sidecar — never mutates host memory, tools, or prompts.",
+  "author": "James Paul Jackson",
+  "category": "ai-safety",
+  "icon": "brain",
+  "tags": [
+    "neural",
+    "trust",
+    "agent",
+    "safety",
+    "anomaly-detection"
+  ],
+  "permissions": {
+    "observeAgentEvents": true,
+    "emitTrustDecisions": true,
+    "proposeMemoryCandidates": true,
+    "hostMemoryWrite": false,
+    "toolInvocation": false,
+    "promptMutation": false
+  },
+  "claimBoundary": "The plugin provides local inference and proposals only; the host retains tool, memory-write, prompt, topology, codec, and external API authority.",
+  "tools": [
+    {
+      "type": "tessera-analyze",
+      "entryPoint": "index.js",
+      "title": "Analyze Session",
+      "description": "Analyze agent session trajectory for drift and anomalies"
+    },
+    {
+      "type": "tessera-trust",
+      "entryPoint": "index.js",
+      "title": "Trust Decision",
+      "description": "Get trust decision (trusted/abstain) for current session"
+    },
+    {
+      "type": "tessera-memory",
+      "entryPoint": "index.js",
+      "title": "Memory Proposals",
+      "description": "Propose memory candidates from session events"
+    },
+    {
+      "type": "tessera-health",
+      "entryPoint": "index.js",
+      "title": "Health Check",
+      "description": "Get plugin health and runtime status"
+    },
+    {
+      "type": "tessera-status",
+      "entryPoint": "index.js",
+      "title": "Status Dashboard",
+      "description": "Get full status dashboard with metrics and evidence"
+    }
+  ],
+  "capabilities": {
+    "trust_routing": true,
+    "anomaly_detection": true,
+    "memory_proposal": true,
+    "session_analysis": true,
+    "health_monitoring": true
+  },
+  "integration": {
+    "agnt_plugin": true,
+    "http_bridge": true,
+    "bridge_port": 8765,
+    "api_base": "/api/plugins/tools",
+    "install_command": "AGNT dashboard → Plugins → Install from File → tessera.agnt"
+  },
+  "authority": {
+    "host_memory_write": false,
+    "tool_invocation": false,
+    "prompt_mutation": false,
+    "live_codec_replacement": false,
+    "topology_mutation": false,
+    "external_api_calls": false
+  },
+  "deployment": {
+    "start_command": "python -m tessera.agnt_bridge --port 8765",
+    "health_check": "GET http://localhost:8765/health"
+  },
+  "verified_metrics": {
+    "nab_auc": 0.615,
+    "ucr_auc": 0.531,
+    "production_p95_ms": 95.19,
+    "route_parity": "20/20",
+    "soak_failures": "0/100",
+    "effective_rank": "2/84",
+    "restart_speedup": "49.5x"
+  }
+}

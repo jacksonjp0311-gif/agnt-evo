@@ -1,0 +1,7 @@
+{
+  "name": "ecosystem-telemetry-hub",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "ecosystem-status.js",
+  "dependencies": {}
+}

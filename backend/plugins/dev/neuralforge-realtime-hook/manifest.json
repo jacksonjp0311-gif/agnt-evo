@@ -1,0 +1,61 @@
+{
+  "name": "neuralforge-realtime-hook",
+  "version": "1.0.0",
+  "description": "Wire NeuralForge's RealtimeEvolutionEngine into live AGNT runtime. Reads real workflow/tool executions from the AGNT database, transforms them into NeuralForge event schema, and feeds them into the evolution engine. Also provides real-data benchmarking. READ-ONLY on AGNT DB.",
+  "author": "jacksonjp0311-gif / Annie",
+  "icon": "activity",
+  "tools": [
+    {
+      "type": "neuralfork-realtime-hook",
+      "entryPoint": "./neuralforge-realtime-hook.js",
+      "schema": {
+        "title": "NeuralForge Realtime Hook",
+        "category": "utility",
+        "type": "neuralfork-realtime-hook",
+        "icon": "activity",
+        "description": "Wire NeuralForge into live AGNT runtime. Read real executions, feed them into the evolution engine, and run real-data benchmarks. READ-ONLY on AGNT DB — does not modify any workflow execution logic.",
+        "parameters": {
+          "action": {
+            "type": "select",
+            "title": "Action",
+            "description": "What to do",
+            "options": [
+              { "value": "status", "label": "Status — show ingestion progress" },
+              { "value": "ingest", "label": "Ingest — pull real executions into NeuralForge" },
+              { "value": "stats", "label": "Stats — real execution statistics" },
+              { "value": "benchmark", "label": "Benchmark — run held-out benchmark on real data" }
+            ],
+            "default": "status"
+          },
+          "limit": {
+            "type": "text",
+            "title": "Ingest Limit",
+            "description": "Max executions to ingest (1-1000). Only for 'ingest' action.",
+            "default": "100"
+          },
+          "days": {
+            "type": "text",
+            "title": "Days Window",
+            "description": "Number of days to look back. Only for 'stats' and 'benchmark' actions.",
+"default": "30"
+          },
+          "persist": {
+            "type": "select",
+            "title": "Persist to Event Log",
+            "description": "Whether to append ingested events to the JSONL file",
+            "options": [
+              { "value": "true", "label": "Yes — append to cold storage" },
+              { "value": "false", "label": "No — dry run" }
+            ],
+            "default": "true"
+          }
+        },
+        "outputs": {
+          "report": { "type": "string", "description": "Formatted report" },
+          "summary": { "type": "object", "description": "Summary statistics" },
+          "status": { "type": "string", "description": "Operation status" }
+        }
+      }
+    }
+  ]
+}
