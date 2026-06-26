@@ -4,6 +4,9 @@ import ProcessManager from './ProcessManager.js';
 import PluginInstaller from '../plugins/PluginInstaller.js';
 import PluginManager from '../plugins/PluginManager.js';
 
+// Track if plugins have been initialized in this process
+let pluginsInitialized = false;
+
 console.log('Workflow process starting...');
 console.log(`Workflow process ID: ${process.pid}`);
 
@@ -180,18 +183,28 @@ async function handleRestartActiveWorkflows() {
 
   await ProcessManager.restartActiveWorkflows();
   return { message: 'Active workflows restart initiated' };
-}
-
-// Handle plugin reload (called when plugins are installed/uninstalled)
+}// Handle plugin reload (called when plugins are installed/uninstalled)
 async function handleReloadPlugins() {
   console.log('[WorkflowProcess] Reloading plugins...');
 
   try {
-    // Re-initialize plugin manager to pick up new plugins
-    await PluginManager.reload();
+    // CRITICAL: Re-initialize PluginInstaller FIRST to discover newly installed plugins
+    // Without this, PluginManager.reload() only re-scans already-known plugins
+    // and newly installed plugins (like neuralforge) won't be found.
+    const initResult = await PluginInstaller.initializePlugins();
+    console.log('[WorkflowProcess] PluginInstaller re-initialized:', initResult?.plugins?.length, 'plugins');
+
+    // Pass validated plugin names to PluginManager.initialize() so it loads ALL plugins
+    // not just the ones that were known at fork time.
+    const validatedNames = initResult?.plugins || [];
+    console.log('[WorkflowProcess] Validated plugin names:', validatedNames.length);
+
+    // Reset PluginManager state and re-initialize with validated names
+    PluginManager.initialized = false;
+    await PluginManager.initialize(validatedNames);
 
     const stats = PluginManager.getStats();
-    console.log('[WorkflowProcess] Plugins reloaded:', stats);
+    console.log('[WorkflowProcess] Plugins reloaded:', stats.totalPlugins, 'plugins,', stats.totalTools, 'tools');
 
     return {
       success: true,
