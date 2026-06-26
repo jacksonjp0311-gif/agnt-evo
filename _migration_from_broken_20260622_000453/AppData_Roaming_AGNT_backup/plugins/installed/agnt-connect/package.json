@@ -1,7 +1,0 @@
-{
-  "name": "agnt-connect",
-  "version": "1.0.0",
-  "type": "module",
-  "main": "agnt-connect-panel.js",
-  "dependencies": {}
-}

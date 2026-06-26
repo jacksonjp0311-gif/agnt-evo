@@ -1,7 +1,0 @@
-{
-  "name": "lssao-toolkit",
-  "version": "0.2.0",
-  "type": "module",
-  "main": "lssao-capability-calc.js",
-  "dependencies": {}
-}

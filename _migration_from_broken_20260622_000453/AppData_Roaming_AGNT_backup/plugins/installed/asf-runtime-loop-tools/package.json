@@ -1,7 +1,0 @@
-{
-  "name": "asf-runtime-loop-tools",
-  "version": "0.5.1",
-  "type": "module",
-  "main": "asf-full-loop-summary.js",
-  "dependencies": {}
-}

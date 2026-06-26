@@ -1,13 +1,15 @@
 # Dependencies
 node_modules/
-.npm-cache
+npm-cache
 frontend/node_modules/
 backend/node_modules/
+
+# Plugin development (moved to AGNT-PLUGINS repo - https://github.com/jacksonjp0311-gif/AGNT-PLUGINS)
+backend/plugins/dev/
 
 # Plugin builds (generated during build, not stored in git)
 backend/plugins/plugin-builds/
 backend/plugins/dev/*/node_modules/
-backend/plugins/installed/
 
 # Claude
 .claude/
@@ -76,30 +78,8 @@ frontend/.cache/
 *.sqlite3
 data/
 
-# Package manager lock files (optional - uncomment if needed)
-# package-lock.json
-# yarn.lock
-
-# Electron builder cache
-.electron-builder-cache/
-
-# Code signing certificates (NEVER commit these!)
-*.p12
-*.pfx
-*.cer
-*.crt
-*.key
-*.pem
-
-# macOS code signing
-*.provisionprofile
-*.mobileprovision
-
-# Puppeteer/Playwright Cache
-.chrome/
-build/chromium/
-
-# package-lock.json
+# Package manager lock files
+package-lock.json
 
 # Claude
 *.claude/
@@ -110,6 +90,13 @@ backend/tests/providers/results/*.json
 # MCP config (contains sensitive data)
 *mcp.json
 
-dup.js
-
-PR_BODY.md
+# Legacy migration artifacts (already untracked, prevent re-adding)
+_migration_from_broken_*
+_plugin_investigation_*
+_plugin_memory_restore_*
+_publish/
+agnt-auditor/
+code-critic/
+improve-AGNT/
+rddc-evolution/
+neuralforge/

@@ -1,7 +1,0 @@
-{
-  "name": "agnt-chat-toolbar-plugin",
-  "version": "0.1.0",
-  "private": true,
-  "description": "Pinned, theme-aware chat toolbar for AGNT assistant messages (regenerate/copy/share/feedback) + adapter + optional .agnt tool widget.",
-  "license": "MIT"
-}

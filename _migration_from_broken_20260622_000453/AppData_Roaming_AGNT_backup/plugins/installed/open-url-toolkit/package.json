@@ -1,7 +1,0 @@
-{
-  "name": "open-url-toolkit",
-  "version": "0.4.0",
-  "type": "module",
-  "main": "open-url.js",
-  "dependencies": {}
-}
