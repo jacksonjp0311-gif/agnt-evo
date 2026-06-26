@@ -9,6 +9,6 @@
     "list": "node build-plugin.js"
   },
   "dependencies": {
-    "tar": "^6.2.0"
+    "tar": "^5.0.11"
   }
 }
