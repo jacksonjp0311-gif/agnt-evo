@@ -18,6 +18,20 @@
 import { createRequire } from 'node:module';
 const nodeRequire = createRequire(import.meta.url);
 
+/**
+ * Cache-busting require — clears the module from require.cache before loading.
+ * This lets us update codec-integration.cjs on disk and have changes take effect
+ * on the next call without restarting AGNT.
+ * NOTE: Only busts the codec module, not the whole cache (safe for production).
+ */
+function freshRequire(modulePath) {
+  try {
+    const resolved = nodeRequire.resolve(modulePath);
+    delete require.cache[resolved];
+  } catch {}
+  return nodeRequire(modulePath);
+}
+
 /** Tools always available without keyword matching or discovery. */
 export const DEFAULT_TOOLS = new Set([
   'discover_tools',
@@ -241,7 +255,7 @@ export function selectTools(allSchemas, userMessage) {
   let codecRankedNames = new Set();
   let codecTopTools = [];
   try {
-    const codec = nodeRequire('../../../plugins/dev/agnt-tool-codec/codec-integration.cjs');
+    const codec = freshRequire('../../../plugins/dev/agnt-tool-codec/codec-integration.cjs');
     const result = codec.codecSelectTools(msg, allSchemas, { maxTools: 7 });
     codecRankedNames = new Set(result.ranked.map(r => {
       const s = r.schema;

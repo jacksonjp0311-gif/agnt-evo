@@ -1052,7 +1052,6 @@ router.post('/install-file/check-auth', authenticateToken, async (req, res) => {
 // ============================================================================
 // PLUGIN RELOAD
 // ============================================================================
-
 /**
  * POST /api/plugins/reload
  * Reload all plugins (useful after manual changes)
