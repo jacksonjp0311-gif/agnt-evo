@@ -206,11 +206,18 @@ function mapSchemas(rankedTools, allSchemas) {
   const map = new Map();
   for (const s of allSchemas) {
     const name = s.function?.name || s.name;
-    if (name) map.set(name, s);
+    if (name) {
+      map.set(name, s);
+      map.set(normalizeToolName(name), s);
+    }
   }
   return rankedTools
-    .map(r => ({ schema: map.get(r.tool), score: r.score, rationale: r.rationale, domain: r.domain }))
+    .map(r => ({ schema: map.get(r.tool) || map.get(normalizeToolName(r.tool)), score: r.score, rationale: r.rationale, domain: r.domain }))
     .filter(r => r.schema);
+}
+
+function normalizeToolName(name) {
+  return String(name || '').replace(/-/g, '_');
 }
 
 // ─── LOG SELECTIONS ──────────────────────────────────────────────────────────

@@ -27,7 +27,7 @@ const nodeRequire = createRequire(import.meta.url);
 function freshRequire(modulePath) {
   try {
     const resolved = nodeRequire.resolve(modulePath);
-    delete require.cache[resolved];
+    delete nodeRequire.cache[resolved];
   } catch {}
   return nodeRequire(modulePath);
 }
