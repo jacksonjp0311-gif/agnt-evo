@@ -20,6 +20,7 @@ const els = {
 };
 
 const STATE_KEY = 'agnt_sidepanel_state_v1';
+const CHAT_SYNC_TIMEOUT_MS = 90000;
 
 const pending = new Map(); // requestId -> { wrap, body, idx }
 
@@ -74,15 +75,12 @@ function setError(msg) {
 
 function scrollMessagesToBottom() {
   const scroll = () => {
-    const last = els.msgs?.lastElementChild;
-    if (last?.scrollIntoView) {
-      last.scrollIntoView({ block: 'end', inline: 'nearest' });
-    } else if (els.msgs) {
-      els.msgs.scrollTop = els.msgs.scrollHeight;
-    }
+    if (!els.msgs) return;
+    els.msgs.scrollTop = els.msgs.scrollHeight;
   };
   requestAnimationFrame(scroll);
   setTimeout(scroll, 80);
+  setTimeout(scroll, 220);
 }
 
 function pushMsg(role, content, extraClass = '', metaInfo = {}) {
@@ -220,6 +218,14 @@ async function bg(msg) {
   return await chrome.runtime.sendMessage(msg);
 }
 
+function withTimeout(promise, ms, label) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timed out after ${Math.round(ms / 1000)}s`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
 function pageContextStats(ctx = pageContext) {
   return {
     url: ctx?.page?.url || '',
@@ -241,6 +247,32 @@ async function telemetry(eventType, data = {}) {
       ...data
     }
   }).catch(() => {});
+}
+
+function compactEvolutionContext(ctx = evolutionContext) {
+  if (!ctx || typeof ctx !== 'object') return null;
+  const policy = ctx.selectorPolicy || {};
+  return {
+    generatedAt: ctx.generatedAt || null,
+    selectorPolicy: {
+      rules: Array.isArray(policy.rules) ? policy.rules.slice(0, 5) : [],
+      preferredSelectors: Array.isArray(policy.preferredSelectors) ? policy.preferredSelectors.slice(0, 5) : [],
+      fragileSelectors: Array.isArray(policy.fragileSelectors) ? policy.fragileSelectors.slice(0, 5) : [],
+    },
+    goldenTraces: Array.isArray(ctx.goldenTraces)
+      ? ctx.goldenTraces.slice(0, 3).map((trace) => ({
+          goal: trace.goal,
+          successCriteria: trace.successCriteria,
+          correction: trace.correction,
+          commands: Array.isArray(trace.commands) ? trace.commands.slice(0, 8) : [],
+        }))
+      : [],
+    lastReport: ctx.lastReport ? {
+      metrics: ctx.lastReport.metrics || {},
+      recommendations: Array.isArray(ctx.lastReport.recommendations) ? ctx.lastReport.recommendations.slice(0, 4) : [],
+      failureClasses: ctx.lastReport.failureClasses || {},
+    } : null,
+  };
 }
 
 function renderContextHint() {
@@ -500,21 +532,29 @@ async function sendMessage(text) {
     pageContext,
     jarvisMode,
     tabControl: jarvisMode ? tabControlProtocol() : null,
-    evolution: evolutionContext,
+    evolution: compactEvolutionContext(),
   };
 
   // Side-panel chat call:
   // - returns an immediate agent response for the sidebar bubble
   // - never opens/focuses/creates any AGNT /chat tabs (persistence is via backend API/session keys)
-  const res = await bg({
-    type: 'AGNT_SEND_AND_MIRROR',
-    requestId,
-    message: text,
-    agentId: selectedAgentId,
-    agentName: selectedAgentName,
-    context,
-    pageContext,
-  });
+  let res;
+  try {
+    res = await withTimeout(bg({
+      type: 'AGNT_SEND_AND_MIRROR',
+      requestId,
+      message: text,
+      agentId: selectedAgentId,
+      agentName: selectedAgentName,
+      context,
+      pageContext,
+    }), CHAT_SYNC_TIMEOUT_MS, 'AGNT sync');
+  } catch (e) {
+    await bg({ type: 'AGNT_ABORT_REQUEST', requestId }).catch(() => {});
+    setHeaderStatus('linked');
+    updatePending(requestId, `Sync failed: ${e?.message || String(e)}\n\nCheck AGNT is running at http://localhost:3333, then press Refresh and try again.`, true);
+    return;
+  }
 
   if (!res?.ok) {
     setHeaderStatus('linked');
