@@ -11,6 +11,7 @@ const els = {
   errorBox: document.getElementById('errorBox'),
   contextHint: document.getElementById('contextHint'),
   captureBtn: document.getElementById('captureBtn'),
+  cyberSnapshotBtn: document.getElementById('cyberSnapshotBtn'),
   actBtn: document.getElementById('actBtn'),
   openAgntBtn: document.getElementById('openAgntBtn'),
   goldenTraceBtn: document.getElementById('goldenTraceBtn'),
@@ -684,6 +685,60 @@ async function captureActiveTab() {
   pushMsg('assistant', '[context] captured page text + selection (bounded)');
 }
 
+async function startCyberSnapshot() {
+  setError(null);
+  const res = await bg({ type: 'AGNT_START_CYBER_SNAPSHOT' });
+  if (!res?.ok) throw new Error(res?.error || 'Cyber Snapshot failed to start');
+  await telemetry('cyber_snapshot_started', pageContextStats());
+  pushMsg('assistant', [
+    '[cyber snapshot] Armed.',
+    'Move box: drag with left mouse',
+    'Resize height: mouse wheel or up/down arrows',
+    'Adjust width: hold right-click + drag left/right',
+    'Capture: left-click',
+    'Cancel: Esc'
+  ].join('\n'));
+}
+
+function handleCyberSnapshotResult(msg) {
+  if (msg?.cancelled) {
+    telemetry('cyber_snapshot_cancelled', pageContextStats()).catch(() => {});
+    pushMsg('assistant', '[cyber snapshot] cancelled');
+    return;
+  }
+
+  const snapshot = msg?.snapshot || {};
+  const text = String(snapshot.text || '').trim();
+  pageContext = {
+    ...(pageContext || {}),
+    page: snapshot.page || pageContext?.page || null,
+    selection: text.slice(0, 8000),
+    pageText: pageContext?.pageText || '',
+    cyberSnapshot: snapshot
+  };
+  renderContextHint();
+  queueSaveState();
+  telemetry('cyber_snapshot_captured', {
+    ...pageContextStats(),
+    snapshotChars: text.length,
+    rect: snapshot.rect || null
+  }).catch(() => {});
+
+  const inserted = [
+    '[Cyber Snapshot Text Inserted]',
+    text || '(No text found inside the selected region.)'
+  ].join('\n');
+
+  pushMsg('assistant', [
+    '[cyber snapshot] Snapshot captured.',
+    inserted
+  ].join('\n'));
+
+  const current = els.input.value.trim();
+  els.input.value = current ? `${current}\n\n${inserted}` : inserted;
+  els.input.focus();
+}
+
 async function openAgntChat() {
   // Sidepanel-only mode:
   // - Never open/focus/create any AGNT (/chat) tabs
@@ -696,6 +751,10 @@ chrome.runtime.onMessage.addListener((msg) => {
     pageContext = msg.context;
     renderContextHint();
     queueSaveState();
+  }
+
+  if (msg?.type === 'AGNT_CYBER_SNAPSHOT_RESULT') {
+    handleCyberSnapshotResult(msg);
   }
 
   // Echo/stream from AGNT agent chat (SSE) back into the sidebar placeholder.
@@ -720,6 +779,7 @@ chrome.runtime.onMessage.addListener((msg) => {
 
 els.refreshBtn.addEventListener('click', () => ensureAndLoadAgents().catch(e => setError(e.message)));
 els.captureBtn.addEventListener('click', () => captureActiveTab().catch(e => setError(e.message)));
+if (els.cyberSnapshotBtn) els.cyberSnapshotBtn.addEventListener('click', () => startCyberSnapshot().catch(e => setError(e.message)));
 if (els.actBtn) els.actBtn.addEventListener('click', () => {
   jarvisMode = !jarvisMode;
   renderJarvisBtn();

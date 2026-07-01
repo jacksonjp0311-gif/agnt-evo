@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "AGNT Browser Agents",
-  "version": "0.2.5",
-  "version_name": "0.2.5 sync reliability fix",
+  "version": "0.2.6",
+  "version_name": "0.2.6 cyber snapshot",
   "description": "Run AGNT chat + agents everywhere in Edge: side panel UI, page context capture, and browser control.",
   "action": {
     "default_title": "AGNT Browser Agents",
