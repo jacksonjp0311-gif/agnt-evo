@@ -399,8 +399,12 @@
     <div class="composer">
       <textarea id="input" placeholder="Ask your agent… (Shift+Enter = newline)"></textarea>
       <div class="row">
-        <button id="suggestBtn" title="Analyze browser telemetry and save it into AGNT's persistent graph.">Analyze telemetry</button>
+        <button id="suggestBtn" title="Run diagnostics and save an evolution report into AGNT's persistent graph.">Diagnostics</button>
         <button id="sendBtn" class="btnAccent">Send</button>
+      </div>
+      <div class="row">
+        <button id="goldenTraceBtn" title="Save the current successful run as a reusable golden trace.">Save trace</button>
+        <button id="selectorPolicyBtn" title="Refresh selector-hardening rules from recent command telemetry.">Harden selectors</button>
       </div>
       <div class="row" id="stopRow" style="display:none">
         <button id="stopBtn" class="btnStop">Stop</button>

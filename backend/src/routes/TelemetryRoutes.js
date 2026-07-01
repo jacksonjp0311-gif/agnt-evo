@@ -35,6 +35,44 @@ router.post('/browserpilot/analyze', async (req, res) => {
   res.json({ success: true, analysis, graph: BrowserPilotTelemetryService.graphSnapshot() });
 });
 
+router.post('/browserpilot/diagnostics', async (req, res) => {
+  await BrowserPilotTelemetryService.ensureGraphLoaded();
+  const limit = req.body?.limit || req.query.limit || 300;
+  const report = BrowserPilotTelemetryService.diagnostics(limit);
+  res.json({ success: true, report, graph: BrowserPilotTelemetryService.graphSnapshot() });
+});
+
+router.get('/browserpilot/selector-policy', async (req, res) => {
+  await BrowserPilotTelemetryService.ensureGraphLoaded();
+  const policy = BrowserPilotTelemetryService.selectorPolicy(req.query.limit || 200);
+  res.json({ success: true, policy });
+});
+
+router.get('/browserpilot/evolution-context', async (req, res) => {
+  await BrowserPilotTelemetryService.ensureGraphLoaded();
+  res.json({ success: true, context: BrowserPilotTelemetryService.evolutionContext() });
+});
+
+router.get('/browserpilot/golden-traces', async (req, res) => {
+  await BrowserPilotTelemetryService.ensureGraphLoaded();
+  res.json({ success: true, traces: BrowserPilotTelemetryService.goldenTraces(req.query.limit || 20) });
+});
+
+router.post('/browserpilot/golden-traces', async (req, res) => {
+  await BrowserPilotTelemetryService.ensureGraphLoaded();
+  const trace = BrowserPilotTelemetryService.saveGoldenTrace(req.body || {});
+  BrowserPilotTelemetryService.record({
+    eventType: 'golden_trace_saved',
+    adapter: 'agnt-edge',
+    data: {
+      goal: trace.goal,
+      successCriteria: trace.successCriteria,
+      traceId: trace.id,
+    },
+  });
+  res.json({ success: true, trace, graph: BrowserPilotTelemetryService.graphSnapshot() });
+});
+
 router.delete('/browserpilot', (req, res) => {
   const cleared = BrowserPilotTelemetryService.clear();
   res.json({ success: true, cleared });

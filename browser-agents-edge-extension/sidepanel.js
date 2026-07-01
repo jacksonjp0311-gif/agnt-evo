@@ -13,6 +13,8 @@ const els = {
   captureBtn: document.getElementById('captureBtn'),
   actBtn: document.getElementById('actBtn'),
   openAgntBtn: document.getElementById('openAgntBtn'),
+  goldenTraceBtn: document.getElementById('goldenTraceBtn'),
+  selectorPolicyBtn: document.getElementById('selectorPolicyBtn'),
   stopRow: document.getElementById('stopRow'),
   stopBtn: document.getElementById('stopBtn')
 };
@@ -31,6 +33,8 @@ let selectedAgentId = '';
 let selectedAgentName = '';
 let pageContext = null;
 let activeRequestId = null;
+let evolutionContext = null;
+let lastExecutedCommands = [];
 
 function timeLabel(ts = Date.now()) {
   const d = new Date(ts);
@@ -364,7 +368,9 @@ function tabControlProtocol() {
       'For "probe current page" or browser diagnostics, use kind="domAudit"; this is diagnostic only and must not bypass challenges or extract cookies/tokens.',
       'For X.com posting: use navigate to https://x.com/compose/post then use xComposeFocus/xComposeType; then screenshot+attachImage; then click tweetButtonInline.',
       'Screenshot limitation: the extension can capture the visible webpage viewport (not OS-level browser chrome).'
-    ]
+    ],
+    selectorPolicy: evolutionContext?.selectorPolicy || null,
+    goldenTraces: evolutionContext?.goldenTraces || []
   };
 }
 
@@ -413,6 +419,7 @@ async function execCommandsOnActiveTab(commands) {
   pushMsg('assistant', `[tab] executing ${commands.length} command(s)…`);
 
   const vars = { lastScreenshot: null };
+  const executed = [];
 
   for (const rawCmd of commands) {
     if (!rawCmd || typeof rawCmd !== 'object') continue;
@@ -424,6 +431,8 @@ async function execCommandsOnActiveTab(commands) {
     if (cmd.kind === 'wait') {
       const ms = Math.max(0, Number(cmd.ms || 0));
       await new Promise(r => setTimeout(r, ms));
+      await telemetry('command_success', { kind: 'wait', ms, ok: true });
+      executed.push({ ...cmd, ok: true });
       continue;
     }
 
@@ -431,21 +440,30 @@ async function execCommandsOnActiveTab(commands) {
       // mode 'window' is treated as viewport (browser chrome cannot be captured by extensions)
       const cap = await bg({ type: 'AGNT_CAPTURE_VISIBLE_TAB' }).catch(e => ({ ok: false, error: e?.message }));
       if (!cap?.ok || !cap?.dataUrl) {
+        await telemetry('command_failed', { kind: 'screenshot', ok: false, error: cap?.error || 'unknown error' });
+        executed.push({ kind: 'screenshot', ok: false, error: cap?.error || 'unknown error' });
+        lastExecutedCommands = executed.slice(-50);
         pushMsg('assistant', `[tab] screenshot failed: ${cap?.error || 'unknown error'}`);
         return;
       }
       vars.lastScreenshot = cap.dataUrl;
+      await telemetry('command_success', { kind: 'screenshot', ok: true });
+      executed.push({ kind: 'screenshot', ok: true });
       pushMsg('assistant', '[tab] screenshot captured (viewport).');
       continue;
     }
 
     const res = await bg({ type: 'AGNT_EXEC_ACTIVE_TAB', command: cmd });
     if (!res?.ok) {
+      executed.push({ ...cmd, ok: false, error: res?.error || 'unknown error' });
+      lastExecutedCommands = executed.slice(-50);
       pushMsg('assistant', `[tab] command failed: ${res?.error || 'unknown error'}\n${JSON.stringify(cmd)}`);
       return;
     }
+    executed.push({ ...cmd, ok: true });
   }
 
+  lastExecutedCommands = executed.slice(-50);
   pushMsg('assistant', '[tab] done.');
 }
 
@@ -462,6 +480,13 @@ async function sendMessage(text) {
 
   // User bubble
   pushMsg('user', text);
+  await telemetry('chat_sent', {
+    agentId: selectedAgentId,
+    agentName: selectedAgentName,
+    page: pageContextStats(),
+    jarvisMode,
+  });
+  await refreshEvolutionContext().catch(() => {});
 
   // Assistant placeholder bubble: Syncing + glow
   const requestId = newRequestId();
@@ -471,7 +496,12 @@ async function sendMessage(text) {
   setHeaderStatus('syncing');
   syncStopUI();
 
-  const context = { pageContext, jarvisMode, tabControl: jarvisMode ? tabControlProtocol() : null };
+  const context = {
+    pageContext,
+    jarvisMode,
+    tabControl: jarvisMode ? tabControlProtocol() : null,
+    evolution: evolutionContext,
+  };
 
   // Side-panel chat call:
   // - returns an immediate agent response for the sidebar bubble
@@ -529,27 +559,80 @@ async function analyzeTelemetry() {
   };
   await telemetry('telemetry_analysis_requested', context);
 
-  const res = await bg({ type: 'AGNT_ANALYZE_TELEMETRY', limit: 250, context });
+  const res = await bg({ type: 'AGNT_EVOLUTION_DIAGNOSTICS', limit: 300, context });
   if (!res?.ok) {
     const detail = res?.details ? `\n\nDetails: ${JSON.stringify(res.details).slice(0, 800)}` : '';
-    throw new Error((res?.error || 'Telemetry analysis failed') + detail);
+    throw new Error((res?.error || 'Evolution diagnostics failed') + detail);
   }
 
-  const analysis = res.data?.analysis || {};
-  const summary = analysis.summary || {};
-  const graphStats = analysis.graphStats || {};
-  const topCommands = (analysis.topCommands || []).map(([name, count]) => `${name} (${count})`).join(', ') || 'none yet';
-  const topEvents = (analysis.topEvents || []).map(([name, count]) => `${name} (${count})`).join(', ') || 'none yet';
-  const hints = (analysis.toolHints || []).length ? ('\nTool hints:\n- ' + analysis.toolHints.join('\n- ')) : '';
+  const report = res.data?.report || {};
+  evolutionContext = {
+    ...(evolutionContext || {}),
+    selectorPolicy: report.selectorPolicy || evolutionContext?.selectorPolicy || null,
+    lastReport: report,
+  };
+  const metrics = report.metrics || {};
+  const topCommands = (report.topCommands || []).map(([name, count]) => `${name} (${count})`).join(', ') || 'none yet';
+  const topEvents = (report.topEvents || []).map(([name, count]) => `${name} (${count})`).join(', ') || 'none yet';
+  const recommendations = (report.recommendations || []).slice(0, 4);
+  const recText = recommendations.length ? ('\nNext changes:\n- ' + recommendations.join('\n- ')) : '';
 
   pushMsg('assistant', [
-    '[telemetry] graph updated',
-    `Events: ${summary.windowSize || 0} | nodes: ${graphStats.nodes || 0} | edges: ${graphStats.edges || 0}`,
+    '[evolution] diagnostics updated',
+    `Success: ${metrics.successRate ?? 0}% | selector stability: ${metrics.selectorStability ?? 0}% | recovery: ${metrics.recoveryFromFailure ?? 0}%`,
+    `Graph: ${metrics.graphNodes || 0} nodes | ${metrics.graphEdges || 0} edges`,
     `Top events: ${topEvents}`,
     `Top commands: ${topCommands}`,
-    summary.lastTab?.url ? `Last tab: ${summary.lastTab.url}` : '',
-    hints
+    recText
   ].filter(Boolean).join('\n'));
+}
+
+async function refreshEvolutionContext() {
+  const res = await bg({ type: 'AGNT_EVOLUTION_CONTEXT' });
+  if (res?.ok) {
+    evolutionContext = res.data?.context || null;
+  }
+  return evolutionContext;
+}
+
+async function hardenSelectors() {
+  const res = await bg({ type: 'AGNT_SELECTOR_POLICY', limit: 200 });
+  if (!res?.ok) throw new Error(res?.error || 'Selector policy refresh failed');
+  const policy = res.data?.policy || {};
+  evolutionContext = { ...(evolutionContext || {}), selectorPolicy: policy };
+  const preferred = (policy.preferredSelectors || []).slice(0, 4).map((item) => `${item.selector} (${item.score})`);
+  const fragile = (policy.fragileSelectors || []).slice(0, 4).map((item) => `${item.selector} (${item.score})`);
+  pushMsg('assistant', [
+    '[selectors] hardening policy refreshed',
+    preferred.length ? 'Preferred:\n- ' + preferred.join('\n- ') : 'Preferred: none observed yet',
+    fragile.length ? 'Fragile:\n- ' + fragile.join('\n- ') : 'Fragile: none flagged',
+  ].join('\n'));
+}
+
+async function saveGoldenTrace() {
+  const lastUser = [...chatLog].reverse().find((item) => item.role === 'user')?.content || '';
+  const goal = window.prompt('Golden trace goal', lastUser.slice(0, 140) || 'Successful browser run');
+  if (!goal) return;
+  const successCriteria = window.prompt('Success criteria', 'This run reached the intended page state and the user approved the result.');
+  if (!successCriteria) return;
+  const correction = window.prompt('Correction or preference to remember', '') || '';
+  const trace = {
+    goal,
+    successCriteria,
+    correction,
+    context: {
+      page: pageContextStats(),
+      agentId: selectedAgentId,
+      agentName: selectedAgentName,
+      jarvisMode,
+    },
+    commands: lastExecutedCommands,
+    outcome: { status: 'success', savedFrom: 'sidepanel' },
+  };
+  const res = await bg({ type: 'AGNT_SAVE_GOLDEN_TRACE', trace });
+  if (!res?.ok) throw new Error(res?.error || 'Golden trace save failed');
+  await refreshEvolutionContext().catch(() => {});
+  pushMsg('assistant', `[golden trace] saved\nGoal: ${res.data?.trace?.goal || goal}`);
 }
 
 async function captureActiveTab() {
@@ -612,6 +695,8 @@ els.sendBtn.addEventListener('click', () => {
 });
 
 els.suggestBtn.addEventListener('click', () => analyzeTelemetry().catch(e => setError(e.message)));
+if (els.goldenTraceBtn) els.goldenTraceBtn.addEventListener('click', () => saveGoldenTrace().catch(e => setError(e.message)));
+if (els.selectorPolicyBtn) els.selectorPolicyBtn.addEventListener('click', () => hardenSelectors().catch(e => setError(e.message)));
 if (els.stopBtn) els.stopBtn.addEventListener('click', () => stopCurrent().catch(e => setError(e.message)));
 
 els.input.addEventListener('keydown', (e) => {
@@ -637,6 +722,7 @@ document.addEventListener('click', (e) => { if (!e.target.closest('.combo')) clo
     renderJarvisBtn();
 
     await ensureAndLoadAgents();
+    await refreshEvolutionContext().catch(() => {});
     setError(null);
     syncStopUI();
 

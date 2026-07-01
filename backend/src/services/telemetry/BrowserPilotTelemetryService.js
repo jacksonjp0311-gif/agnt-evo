@@ -9,6 +9,8 @@ const MAX_EVENTS = 500;
 const MAX_STRING = 500;
 const MAX_ARRAY = 25;
 const MAX_DEPTH = 4;
+const MAX_GOLDEN_TRACES = 100;
+const MAX_REPORTS = 30;
 const LOG_PATH = path.join(__dirname, '..', '..', '..', 'data', 'browserpilot-telemetry.jsonl');
 const GRAPH_PATH = path.join(__dirname, '..', '..', '..', 'data', 'browserpilot-telemetry-graph.json');
 
@@ -41,6 +43,53 @@ function clean(value, depth = 0) {
   return out;
 }
 
+function selectorScore(css) {
+  const s = String(css || '').trim();
+  if (!s) return { score: 0, class: 'missing', reasons: ['missing selector'] };
+
+  let score = 50;
+  const reasons = [];
+  if (/\[data-testid=|\[data-test=|\[data-cy=|\[aria-label=|\[name=|\[role=/.test(s)) {
+    score += 25;
+    reasons.push('stable attribute');
+  }
+  if (/#[-_a-zA-Z0-9]+/.test(s)) {
+    score += 15;
+    reasons.push('id selector');
+  }
+  if (/button|input|textarea|select|\[contenteditable=|\[role="textbox"|\[role='textbox'/.test(s)) {
+    score += 10;
+    reasons.push('interactive target');
+  }
+  if (/:nth-child|:nth-of-type|>\s*[^[]/.test(s)) {
+    score -= 25;
+    reasons.push('positional path');
+  }
+  if (s.length > 120) {
+    score -= 15;
+    reasons.push('long selector');
+  }
+  if (!/\[|#|\./.test(s)) {
+    score -= 10;
+    reasons.push('broad selector');
+  }
+
+  score = Math.max(0, Math.min(100, score));
+  const klass = score >= 80 ? 'strong' : score >= 55 ? 'usable' : 'fragile';
+  return { score, class: klass, reasons };
+}
+
+function inferFailureClass(eventType, data = {}) {
+  const haystack = `${eventType} ${data.error || ''} ${data.reason || ''}`.toLowerCase();
+  if (/no element|selector|matches|nth-child|not found/.test(haystack)) return 'wrong element / selector ambiguity';
+  if (/timeout|slow|network|waiting/.test(haystack)) return 'slow / timeout';
+  if (/login|permission|forbidden|unauthorized|auth/.test(haystack)) return 'blocked by login / permissions';
+  if (/blocked|risk|confirm|policy/.test(haystack)) return 'policy hesitation';
+  if (/dom|changed|drift|stale/.test(haystack)) return 'page changed / DOM drift';
+  if (/fail|error/.test(haystack)) return 'general execution failure';
+  return null;
+}
+
 class BrowserPilotTelemetryService {
   constructor() {
     this.events = [];
@@ -62,9 +111,14 @@ class BrowserPilotTelemetryService {
         commands: 0,
         captures: 0,
         chats: 0,
+        successes: 0,
+        goldenTraces: 0,
       },
       nodes: {},
       edges: [],
+      goldenTraces: [],
+      evolutionReports: [],
+      selectorPolicy: null,
       lastAnalysis: null,
     };
   }
@@ -74,7 +128,17 @@ class BrowserPilotTelemetryService {
       const raw = await fs.readFile(GRAPH_PATH, 'utf8');
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === 'object' && parsed.schemaVersion) {
-        this.graph = { ...this.createEmptyGraph(), ...parsed };
+        const empty = this.createEmptyGraph();
+        this.graph = {
+          ...empty,
+          ...parsed,
+          counters: { ...empty.counters, ...(parsed.counters || {}) },
+          nodes: parsed.nodes || {},
+          edges: Array.isArray(parsed.edges) ? parsed.edges : [],
+          goldenTraces: Array.isArray(parsed.goldenTraces) ? parsed.goldenTraces : [],
+          evolutionReports: Array.isArray(parsed.evolutionReports) ? parsed.evolutionReports : [],
+          selectorPolicy: parsed.selectorPolicy || null,
+        };
       }
     } catch {
       this.graph = this.createEmptyGraph();
@@ -120,6 +184,8 @@ class BrowserPilotTelemetryService {
     const events = this.recent(limit);
     const byType = {};
     const commandKinds = {};
+    const outcomes = { success: 0, failure: 0 };
+    const failureClasses = {};
     let errors = 0;
     let blocked = 0;
     let lastTab = null;
@@ -130,6 +196,10 @@ class BrowserPilotTelemetryService {
       if (kind) commandKinds[kind] = (commandKinds[kind] || 0) + 1;
       if (/error|failed/i.test(event.eventType)) errors++;
       if (/blocked/i.test(event.eventType)) blocked++;
+      if (/success|completed/i.test(event.eventType) || event.data?.ok === true) outcomes.success++;
+      if (/error|failed/i.test(event.eventType) || event.data?.ok === false) outcomes.failure++;
+      const failureClass = inferFailureClass(event.eventType, event.data);
+      if (failureClass) failureClasses[failureClass] = (failureClasses[failureClass] || 0) + 1;
       if (event.data?.url || event.data?.title || event.data?.tabId) {
         lastTab = {
           tabId: event.data?.tabId ?? null,
@@ -146,6 +216,8 @@ class BrowserPilotTelemetryService {
       lastSeen: events.at(-1)?.ts || null,
       byType,
       commandKinds,
+      outcomes,
+      failureClasses,
       errors,
       blocked,
       lastTab,
@@ -194,6 +266,7 @@ class BrowserPilotTelemetryService {
     if (/command/i.test(event.eventType)) this.graph.counters.commands += 1;
     if (/captured/i.test(event.eventType)) this.graph.counters.captures += 1;
     if (/chat/i.test(event.eventType)) this.graph.counters.chats += 1;
+    if (/success|completed/i.test(event.eventType) || data.ok === true) this.graph.counters.successes += 1;
 
     const eventNode = this.node(`event:${event.eventType}`, 'event', event.eventType);
     const adapterNode = this.node(`adapter:${event.adapter}`, 'adapter', event.adapter);
@@ -203,6 +276,25 @@ class BrowserPilotTelemetryService {
     if (kind) {
       const commandNode = this.node(`command:${kind}`, 'command', kind, { risk: data.risk, reason: data.reason });
       this.edge(eventNode.id, commandNode.id, 'observed_command');
+    }
+
+    if (data.css) {
+      const selector = String(data.css);
+      const score = selectorScore(selector);
+      const selectorNode = this.node(`selector:${selector}`, 'selector', selector, {
+        score: score.score,
+        class: score.class,
+        reasons: score.reasons,
+        kind,
+      });
+      this.edge(eventNode.id, selectorNode.id, 'used_selector');
+      if (kind) this.edge(selectorNode.id, `command:${kind}`, 'supports_command');
+    }
+
+    const failureClass = inferFailureClass(event.eventType, data);
+    if (failureClass) {
+      const failureNode = this.node(`failure:${failureClass}`, 'failure_class', failureClass);
+      this.edge(eventNode.id, failureNode.id, 'classified_as');
     }
 
     if (data.url) {
@@ -233,6 +325,7 @@ class BrowserPilotTelemetryService {
     const topEvents = Object.entries(summary.byType).sort((a, b) => b[1] - a[1]).slice(0, 8);
     const topCommands = Object.entries(summary.commandKinds).sort((a, b) => b[1] - a[1]).slice(0, 8);
     const pages = graph.nodes.filter((node) => node.type === 'page').slice(0, 8);
+    const selectors = graph.nodes.filter((node) => node.type === 'selector').slice(0, 12);
     const toolHints = [];
 
     if (summary.blocked > 0) toolHints.push('Prefer lower-risk browser commands or require confirmation before destructive actions.');
@@ -241,6 +334,9 @@ class BrowserPilotTelemetryService {
       toolHints.push('Browser operation tools are relevant for the current task context.');
     }
     if (summary.windowSize === 0) toolHints.push('No BrowserPilot sensory data yet; capture the page before tool selection.');
+    if (selectors.some((node) => node.meta?.class === 'fragile')) {
+      toolHints.push('Selector hardening is recommended: prefer data-testid, aria-label, role, name, or id selectors before positional CSS.');
+    }
 
     const analysis = {
       analyzedAt: new Date().toISOString(),
@@ -248,6 +344,7 @@ class BrowserPilotTelemetryService {
       topEvents,
       topCommands,
       pages: pages.map((node) => ({ label: node.label, weight: node.weight, meta: node.meta })),
+      selectors: selectors.map((node) => ({ label: node.label, weight: node.weight, meta: node.meta })),
       toolHints,
       graphStats: {
         nodes: graph.nodes.length,
@@ -259,6 +356,155 @@ class BrowserPilotTelemetryService {
     this.graph.updatedAt = analysis.analyzedAt;
     this.persistGraph().catch(() => {});
     return analysis;
+  }
+
+  selectorPolicy(limit = 200) {
+    const graph = this.graphSnapshot();
+    const selectors = graph.nodes
+      .filter((node) => node.type === 'selector')
+      .map((node) => ({
+        selector: node.label,
+        weight: node.weight,
+        score: node.meta?.score ?? selectorScore(node.label).score,
+        class: node.meta?.class ?? selectorScore(node.label).class,
+        reasons: node.meta?.reasons || [],
+      }))
+      .sort((a, b) => (b.score * b.weight) - (a.score * a.weight))
+      .slice(0, Math.max(1, Math.min(Number(limit) || 20, 50)));
+
+    const policy = {
+      generatedAt: new Date().toISOString(),
+      rules: [
+        'Prefer stable attributes in this order: data-testid/data-test/data-cy, aria-label, role+name, id, semantic tag.',
+        'Before critical clicks or typing, verify the target exists and is visible; use waitForSelector when the page is changing.',
+        'Avoid nth-child, long parent chains, and broad text-only selectors unless no stable attribute exists.',
+        'When a selector fails once, run domAudit or capture page context before retrying with a different selector.',
+        'Ask before irreversible submits, purchases, deletes, posts, or messages unless the user explicitly approved that action.'
+      ],
+      preferredSelectors: selectors.filter((item) => item.class !== 'fragile').slice(0, 10),
+      fragileSelectors: selectors.filter((item) => item.class === 'fragile').slice(0, 10),
+    };
+
+    this.graph.selectorPolicy = policy;
+    this.graph.updatedAt = policy.generatedAt;
+    this.persistGraph().catch(() => {});
+    return policy;
+  }
+
+  diagnostics(limit = 300) {
+    const analysis = this.analyze(limit);
+    const selectorPolicy = this.selectorPolicy();
+    const summary = analysis.summary;
+    const totalOutcomes = summary.outcomes.success + summary.outcomes.failure;
+    const successRate = totalOutcomes ? Math.round((summary.outcomes.success / totalOutcomes) * 100) : 0;
+    const selectorScores = analysis.selectors.map((item) => Number(item.meta?.score || 0)).filter(Boolean);
+    const selectorStability = selectorScores.length
+      ? Math.round(selectorScores.reduce((sum, n) => sum + n, 0) / selectorScores.length)
+      : 0;
+    const recovery = summary.errors ? Math.max(0, Math.min(100, Math.round((summary.outcomes.success / (summary.errors + summary.outcomes.success)) * 100))) : 100;
+    const userEffort = Math.max(0, Math.min(100, 100 - Math.min(80, (summary.byType.chat_sent || 0) * 2)));
+
+    const recommendations = [
+      ...analysis.toolHints,
+      selectorPolicy.fragileSelectors.length
+        ? 'Harden the fragile selectors listed in selectorPolicy.fragileSelectors.'
+        : 'Selector policy is healthy; keep preferring stable attributes.',
+      summary.errors
+        ? 'Review the top failure classes before adding new automation steps.'
+        : 'No recent command failures detected in the telemetry window.',
+      this.graph.goldenTraces.length
+        ? 'Use the most recent golden trace as the default path for similar tasks.'
+        : 'Save the next successful run as a golden trace to create a replayable template.'
+    ];
+
+    const report = {
+      id: `bp-report-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      generatedAt: new Date().toISOString(),
+      metrics: {
+        successRate,
+        selectorStability,
+        recoveryFromFailure: recovery,
+        userEffort,
+        graphNodes: analysis.graphStats.nodes,
+        graphEdges: analysis.graphStats.edges,
+      },
+      topEvents: analysis.topEvents,
+      topCommands: analysis.topCommands,
+      failureClasses: summary.failureClasses,
+      recommendations,
+      selectorPolicy,
+      workflowBlueprints: [
+        {
+          name: 'BrowserPilot Daily Diagnostics',
+          cadence: 'daily',
+          steps: ['analyze telemetry', 'cluster failure classes', 'refresh selector policy', 'write evolution report']
+        },
+        {
+          name: 'BrowserPilot Golden Trace Review',
+          cadence: 'weekly',
+          steps: ['list golden traces', 'promote the best trace per task family', 'retire stale selectors']
+        }
+      ]
+    };
+
+    this.graph.evolutionReports = [report, ...(this.graph.evolutionReports || [])].slice(0, MAX_REPORTS);
+    this.graph.lastAnalysis = analysis;
+    this.graph.updatedAt = report.generatedAt;
+    this.persistGraph().catch(() => {});
+    return report;
+  }
+
+  saveGoldenTrace(input = {}) {
+    const trace = {
+      id: `bp-golden-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      createdAt: new Date().toISOString(),
+      goal: clampString(input.goal || input.name || 'Untitled browser run', 180),
+      successCriteria: clampString(input.successCriteria || 'User confirmed the run was successful.', 240),
+      correction: clampString(input.correction || '', 240),
+      riskPosture: clampString(input.riskPosture || 'Ask before irreversible actions.', 120),
+      interactionStyle: clampString(input.interactionStyle || 'Just do it, narrate minimally.', 120),
+      context: clean(input.context || {}),
+      commands: clean(Array.isArray(input.commands) ? input.commands : []),
+      outcome: clean(input.outcome || { status: 'success' }),
+    };
+
+    this.graph.goldenTraces = [trace, ...(this.graph.goldenTraces || [])].slice(0, MAX_GOLDEN_TRACES);
+    this.graph.counters.goldenTraces = this.graph.goldenTraces.length;
+
+    const traceNode = this.node(`golden:${trace.id}`, 'golden_trace', trace.goal, {
+      successCriteria: trace.successCriteria,
+      correction: trace.correction,
+    });
+    if (trace.context?.page?.url) {
+      let host = trace.context.page.url;
+      try { host = new URL(trace.context.page.url).hostname; } catch {}
+      const pageNode = this.node(`page:${host}`, 'page', host, trace.context.page);
+      this.edge(traceNode.id, pageNode.id, 'validated_on');
+    }
+
+    this.graph.updatedAt = trace.createdAt;
+    this.persistGraph().catch(() => {});
+    return trace;
+  }
+
+  goldenTraces(limit = 20) {
+    const n = Math.max(1, Math.min(Number(limit) || 20, MAX_GOLDEN_TRACES));
+    return (this.graph.goldenTraces || []).slice(0, n);
+  }
+
+  evolutionContext() {
+    const policy = this.graph.selectorPolicy || this.selectorPolicy();
+    return {
+      generatedAt: new Date().toISOString(),
+      selectorPolicy: policy,
+      goldenTraces: this.goldenTraces(5).map((trace) => ({
+        goal: trace.goal,
+        successCriteria: trace.successCriteria,
+        correction: trace.correction,
+        commands: trace.commands,
+      })),
+      lastReport: (this.graph.evolutionReports || [])[0] || null,
+    };
   }
 
   clear() {

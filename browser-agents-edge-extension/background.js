@@ -287,6 +287,8 @@ async function ensureDefaultAgent() {
       'The JSON must be an array of command objects, e.g.:',
       'AGNT_EXEC: [{"kind":"navigate","url":"https://example.com"},{"kind":"click","css":"button#login"}]',
       'For page probing or browser diagnostics, use AGNT_EXEC: [{"kind":"domAudit","includeResources":true}]. This is diagnostic only; never bypass challenges or extract cookies/tokens.',
+      'Use the BrowserPilot evolution context when present: goldenTraces are preferred successful paths; selectorPolicy is the current selector-hardening rulebook.',
+      'Prefer stable selectors in this order: data-testid/data-test/data-cy, aria-label, role+name, id, semantic tag. Avoid nth-child and long parent chains.',
       'Prefer kind="navigate" (same tab) unless the user explicitly asks for a new tab.',
       'After emitting AGNT_EXEC, also describe briefly what you did.'
     ].join('\n')
@@ -441,6 +443,36 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         return;
       }
 
+      if (msg?.type === 'AGNT_EVOLUTION_DIAGNOSTICS') {
+        const data = await agntFetch('/api/telemetry/browserpilot/diagnostics', {
+          method: 'POST',
+          body: { limit: msg.limit || 300, context: msg.context || {} }
+        });
+        sendResponse({ ok: true, data });
+        return;
+      }
+
+      if (msg?.type === 'AGNT_SELECTOR_POLICY') {
+        const data = await agntFetch('/api/telemetry/browserpilot/selector-policy?limit=' + encodeURIComponent(msg.limit || 200));
+        sendResponse({ ok: true, data });
+        return;
+      }
+
+      if (msg?.type === 'AGNT_EVOLUTION_CONTEXT') {
+        const data = await agntFetch('/api/telemetry/browserpilot/evolution-context');
+        sendResponse({ ok: true, data });
+        return;
+      }
+
+      if (msg?.type === 'AGNT_SAVE_GOLDEN_TRACE') {
+        const data = await agntFetch('/api/telemetry/browserpilot/golden-traces', {
+          method: 'POST',
+          body: msg.trace || {}
+        });
+        sendResponse({ ok: true, data });
+        return;
+      }
+
       // Side panel UX: return an immediate agent response for the sidebar.
       // (No tab opening / no mirroring into the AGNT /chat frontend.)
       if (msg?.type === 'AGNT_SEND_AND_MIRROR') {
@@ -546,6 +578,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           const { agntBaseUrl } = await getSettings();
           if (isAgntChatUrl(url, agntBaseUrl)) throw new Error('Blocked: AGNT /chat cannot be opened from the side panel.');
           await chrome.tabs.update(tabId, { url });
+          await recordTelemetry('command_success', { kind, url, tabId, ok: true });
           sendResponse({ ok: true, result: 'navigated ' + url });
           return;
         }
@@ -556,23 +589,42 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           const { agntBaseUrl } = await getSettings();
           if (isAgntChatUrl(url, agntBaseUrl)) throw new Error('Blocked: AGNT /chat cannot be opened from the side panel.');
           const created = await chrome.tabs.create({ url, active: true, openerTabId: tabId });
+          await recordTelemetry('command_success', { kind, url, tabId: created?.id, ok: true });
           sendResponse({ ok: true, result: 'opened tab ' + url, tabId: created?.id });
           return;
         }
 
         if (kind === 'closeTab') {
           await chrome.tabs.remove(tabId);
+          await recordTelemetry('command_success', { kind, tabId, ok: true });
           sendResponse({ ok: true, result: 'closed active tab' });
           return;
         }
 
         const res = await chrome.tabs.sendMessage(tabId, { type: 'AGNT_EXEC', command: cmd });
+        await recordTelemetry(res?.ok ? 'command_success' : 'command_failed', {
+          kind,
+          css: cmd.css,
+          url: cmd.url,
+          ok: Boolean(res?.ok),
+          error: res?.ok ? null : res?.error,
+          tabId,
+        });
         sendResponse(res);
         return;
       }
 
       sendResponse({ ok: true, ignored: true });
     } catch (e) {
+      if (msg?.type === 'AGNT_EXEC_ACTIVE_TAB') {
+        recordTelemetry('command_failed', {
+          kind: msg.command?.kind,
+          css: msg.command?.css,
+          url: msg.command?.url,
+          ok: false,
+          error: e?.message || String(e),
+        }).catch(() => {});
+      }
       sendResponse({ ok: false, error: e?.message || String(e), details: e?.details, status: e?.status });
     }
   })();
