@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "AGNT Browser Agents",
-  "version": "0.2.2",
-  "version_name": "0.2.2 DOM audit probe",
+  "version": "0.2.3",
+  "version_name": "0.2.3 sync bubble fix",
   "description": "Run AGNT chat + agents everywhere in Edge: side panel UI, page context capture, and browser control.",
   "action": {
     "default_title": "AGNT Browser Agents",
