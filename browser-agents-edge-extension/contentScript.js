@@ -232,6 +232,53 @@
       .slice(0, 12000);
   }
 
+  let cyberRegionWatchTimer = null;
+  let cyberRegionWatchState = null;
+
+  function stopCyberRegionWatch() {
+    if (cyberRegionWatchTimer) clearInterval(cyberRegionWatchTimer);
+    cyberRegionWatchTimer = null;
+    cyberRegionWatchState = null;
+  }
+
+  function startCyberRegionWatch({ rect, previousText = '', page = null } = {}) {
+    if (!rect) throw new Error('Region watch requires a Cyber Snapshot rectangle.');
+    stopCyberRegionWatch();
+    cyberRegionWatchState = {
+      rect,
+      page,
+      previousText: String(previousText || ''),
+      previousHash: hashString(previousText || ''),
+      startedAt: new Date().toISOString()
+    };
+    cyberRegionWatchTimer = setInterval(() => {
+      try {
+        const text = extractTextInViewportRect({
+          left: Number(rect.x || 0),
+          top: Number(rect.y || 0),
+          right: Number(rect.x || 0) + Number(rect.width || 0),
+          bottom: Number(rect.y || 0) + Number(rect.height || 0),
+          width: Number(rect.width || 0),
+          height: Number(rect.height || 0)
+        });
+        const nextHash = hashString(text);
+        if (nextHash && nextHash !== cyberRegionWatchState.previousHash) {
+          const previousTextNow = cyberRegionWatchState.previousText;
+          cyberRegionWatchState.previousText = text;
+          cyberRegionWatchState.previousHash = nextHash;
+          chrome.runtime.sendMessage({
+            type: 'AGNT_CYBER_REGION_CHANGED',
+            page: cyberRegionWatchState.page || { url: location.href, title: document.title },
+            rect,
+            text,
+            previousText: previousTextNow,
+            changedAt: new Date().toISOString()
+          }).catch(() => {});
+        }
+      } catch {}
+    }, 1800);
+  }
+
   function startCyberSnapshotOverlay() {
     const existing = document.getElementById('agnt-cyber-snapshot-root');
     if (existing) existing.remove();
@@ -399,6 +446,9 @@
           y: Math.round(rect.top),
           width: Math.round(rect.width),
           height: Math.round(rect.height),
+          viewportWidth: Math.round(window.innerWidth || document.documentElement.clientWidth || 0),
+          viewportHeight: Math.round(window.innerHeight || document.documentElement.clientHeight || 0),
+          devicePixelRatio: Number(window.devicePixelRatio || 1),
           scrollX: Math.round(window.scrollX || 0),
           scrollY: Math.round(window.scrollY || 0)
         },
@@ -507,6 +557,18 @@
         if (msg?.type === 'AGNT_START_CYBER_SNAPSHOT') {
           startCyberSnapshotOverlay();
           sendResponse({ ok: true, started: true });
+          return;
+        }
+
+        if (msg?.type === 'AGNT_START_REGION_WATCH') {
+          startCyberRegionWatch({ rect: msg.rect, previousText: msg.previousText || '', page: msg.page || null });
+          sendResponse({ ok: true, watching: true });
+          return;
+        }
+
+        if (msg?.type === 'AGNT_STOP_REGION_WATCH') {
+          stopCyberRegionWatch();
+          sendResponse({ ok: true, watching: false });
           return;
         }
 

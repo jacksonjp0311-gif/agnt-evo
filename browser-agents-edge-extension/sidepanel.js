@@ -12,6 +12,7 @@ const els = {
   contextHint: document.getElementById('contextHint'),
   captureBtn: document.getElementById('captureBtn'),
   cyberSnapshotBtn: document.getElementById('cyberSnapshotBtn'),
+  watchRegionBtn: document.getElementById('watchRegionBtn'),
   actBtn: document.getElementById('actBtn'),
   openAgntBtn: document.getElementById('openAgntBtn'),
   goldenTraceBtn: document.getElementById('goldenTraceBtn'),
@@ -37,6 +38,8 @@ let pageContext = null;
 let activeRequestId = null;
 let evolutionContext = null;
 let lastExecutedCommands = [];
+let lastCyberSnapshot = null;
+let regionWatchActive = false;
 
 function timeLabel(ts = Date.now()) {
   const d = new Date(ts);
@@ -51,6 +54,7 @@ function queueSaveState() {
         v: 1,
         jarvisMode,
         pageContext,
+        lastCyberSnapshot,
         chatLog: chatLog.slice(-200) // keep it light
       }
     }).catch(() => {});
@@ -62,6 +66,13 @@ function renderJarvisBtn() {
   els.actBtn.textContent = jarvisMode ? 'Jarvis: ON' : 'Jarvis: OFF';
   els.actBtn.classList.toggle('btnModeOn', jarvisMode);
   els.actBtn.classList.toggle('btnModeOff', !jarvisMode);
+}
+
+function renderWatchRegionBtn() {
+  if (!els.watchRegionBtn) return;
+  els.watchRegionBtn.textContent = regionWatchActive ? 'Stop watch' : 'Watch region';
+  els.watchRegionBtn.classList.toggle('btnModeOn', regionWatchActive);
+  els.watchRegionBtn.disabled = !regionWatchActive && !lastCyberSnapshot;
 }
 
 function setError(msg) {
@@ -92,7 +103,8 @@ function pushMsg(role, content, extraClass = '', metaInfo = {}) {
     at: typeof metaInfo.at === 'number' ? metaInfo.at : Date.now(),
     extraClass: extraClass || '',
     requestId: metaInfo.requestId || null,
-    streaming: Boolean(metaInfo.streaming)
+    streaming: Boolean(metaInfo.streaming),
+    imageLabel: metaInfo.imageLabel || null
   };
 
   chatLog.push(item);
@@ -112,6 +124,13 @@ function pushMsg(role, content, extraClass = '', metaInfo = {}) {
 
   wrap.appendChild(meta);
   wrap.appendChild(body);
+  if (metaInfo.imageDataUrl) {
+    const img = document.createElement('img');
+    img.src = metaInfo.imageDataUrl;
+    img.alt = metaInfo.imageLabel || 'Cyber Snapshot image crop';
+    img.style.cssText = 'display:block;width:100%;max-height:220px;object-fit:contain;margin-top:8px;border:1px solid rgba(18,224,255,0.24);border-radius:10px;background:rgba(0,0,0,0.24);';
+    wrap.appendChild(img);
+  }
   els.msgs.appendChild(wrap);
   scrollMessagesToBottom();
 
@@ -232,8 +251,38 @@ function pageContextStats(ctx = pageContext) {
     url: ctx?.page?.url || '',
     title: ctx?.page?.title || '',
     selectionChars: String(ctx?.selection || '').length,
-    pageTextChars: String(ctx?.pageText || '').length
+    pageTextChars: String(ctx?.pageText || '').length,
+    cyberSnapshotChars: String(ctx?.cyberSnapshot?.text || '').length
   };
+}
+
+function loadImage(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('Could not load captured viewport image.'));
+    img.src = dataUrl;
+  });
+}
+
+async function cropViewportDataUrl(dataUrl, rect) {
+  if (!dataUrl || !rect) return null;
+  const img = await loadImage(dataUrl);
+  const sxScale = img.naturalWidth / Math.max(1, Number(rect.viewportWidth || window.innerWidth || img.naturalWidth));
+  const syScale = img.naturalHeight / Math.max(1, Number(rect.viewportHeight || window.innerHeight || img.naturalHeight));
+  const sx = Math.max(0, Math.round(Number(rect.x || 0) * sxScale));
+  const sy = Math.max(0, Math.round(Number(rect.y || 0) * syScale));
+  const sw = Math.max(1, Math.min(img.naturalWidth - sx, Math.round(Number(rect.width || 1) * sxScale)));
+  const sh = Math.max(1, Math.min(img.naturalHeight - sy, Math.round(Number(rect.height || 1) * syScale)));
+  const maxW = 920;
+  const scale = Math.min(1, maxW / sw);
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(sw * scale));
+  canvas.height = Math.max(1, Math.round(sh * scale));
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  ctx.drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL('image/jpeg', 0.84);
 }
 
 async function telemetry(eventType, data = {}) {
@@ -700,7 +749,7 @@ async function startCyberSnapshot() {
   ].join('\n'));
 }
 
-function handleCyberSnapshotResult(msg) {
+async function handleCyberSnapshotResult(msg) {
   if (msg?.cancelled) {
     telemetry('cyber_snapshot_cancelled', pageContextStats()).catch(() => {});
     pushMsg('assistant', '[cyber snapshot] cancelled');
@@ -709,6 +758,7 @@ function handleCyberSnapshotResult(msg) {
 
   const snapshot = msg?.snapshot || {};
   const text = String(snapshot.text || '').trim();
+  lastCyberSnapshot = snapshot;
   pageContext = {
     ...(pageContext || {}),
     page: snapshot.page || pageContext?.page || null,
@@ -717,11 +767,45 @@ function handleCyberSnapshotResult(msg) {
     cyberSnapshot: snapshot
   };
   renderContextHint();
+  renderWatchRegionBtn();
   queueSaveState();
+
+  let cropDataUrl = null;
+  try {
+    const cap = await bg({ type: 'AGNT_CAPTURE_VISIBLE_TAB' }).catch(e => ({ ok: false, error: e?.message }));
+    if (cap?.ok && cap.dataUrl) {
+      cropDataUrl = await cropViewportDataUrl(cap.dataUrl, snapshot.rect);
+      if (cropDataUrl) {
+        const imageRecord = {
+          snapshotId: snapshot.id || snapshot.capturedAt || `snapshot-${Date.now()}`,
+          page: snapshot.page || null,
+          rect: snapshot.rect || null,
+          cropDataUrl,
+          savedAt: new Date().toISOString()
+        };
+        chrome.storage.local.set({ agnt_cyber_snapshot_latest_v1: imageRecord }).catch(() => {});
+        snapshot.image = {
+          type: 'viewport_crop',
+          storageKey: 'agnt_cyber_snapshot_latest_v1',
+          bytesApprox: cropDataUrl.length,
+          width: snapshot.rect?.width || null,
+          height: snapshot.rect?.height || null
+        };
+        queueSaveState();
+      }
+    }
+  } catch {}
+
   telemetry('cyber_snapshot_captured', {
     ...pageContextStats(),
     snapshotChars: text.length,
-    rect: snapshot.rect || null
+    rect: snapshot.rect || null,
+    image: snapshot.image || null,
+    graph: {
+      kind: 'cyber_snapshot',
+      nodes: ['page', 'region', 'text', cropDataUrl ? 'image_crop' : null].filter(Boolean),
+      edge: 'page_region_captured'
+    }
   }).catch(() => {});
 
   const inserted = [
@@ -731,12 +815,45 @@ function handleCyberSnapshotResult(msg) {
 
   pushMsg('assistant', [
     '[cyber snapshot] Snapshot captured.',
+    cropDataUrl ? '[Cyber Snapshot Image Crop Inserted]' : '[Cyber Snapshot Image Crop Unavailable]',
     inserted
-  ].join('\n'));
+  ].join('\n'), '', cropDataUrl ? { imageDataUrl: cropDataUrl, imageLabel: 'Cyber Snapshot image crop' } : {});
 
   const current = els.input.value.trim();
-  els.input.value = current ? `${current}\n\n${inserted}` : inserted;
+  const composerInsert = [
+    inserted,
+    cropDataUrl ? '[Cyber Snapshot Image Crop: saved locally for this extension session]' : ''
+  ].filter(Boolean).join('\n');
+  els.input.value = current ? `${current}\n\n${composerInsert}` : composerInsert;
   els.input.focus();
+}
+
+async function toggleRegionWatch() {
+  if (regionWatchActive) {
+    const res = await bg({ type: 'AGNT_STOP_REGION_WATCH' });
+    if (!res?.ok) throw new Error(res?.error || 'Could not stop region watch');
+    regionWatchActive = false;
+    renderWatchRegionBtn();
+    await telemetry('cyber_region_watch_stopped', pageContextStats());
+    pushMsg('assistant', '[cyber watch] stopped');
+    return;
+  }
+
+  if (!lastCyberSnapshot?.rect) throw new Error('Capture a Cyber Snapshot first.');
+  const res = await bg({
+    type: 'AGNT_START_REGION_WATCH',
+    rect: lastCyberSnapshot.rect,
+    previousText: lastCyberSnapshot.text || '',
+    page: lastCyberSnapshot.page || pageContext?.page || null
+  });
+  if (!res?.ok) throw new Error(res?.error || 'Could not start region watch');
+  regionWatchActive = true;
+  renderWatchRegionBtn();
+  await telemetry('cyber_region_watch_started', {
+    ...pageContextStats(),
+    rect: lastCyberSnapshot.rect || null
+  });
+  pushMsg('assistant', '[cyber watch] watching the last Cyber Snapshot region for text changes.');
 }
 
 async function openAgntChat() {
@@ -754,7 +871,26 @@ chrome.runtime.onMessage.addListener((msg) => {
   }
 
   if (msg?.type === 'AGNT_CYBER_SNAPSHOT_RESULT') {
-    handleCyberSnapshotResult(msg);
+    handleCyberSnapshotResult(msg).catch(e => setError(e.message));
+  }
+
+  if (msg?.type === 'AGNT_CYBER_REGION_CHANGED') {
+    const text = String(msg.text || '').trim();
+    const previous = String(msg.previousText || '').trim();
+    const summary = [
+      '[cyber watch] region changed',
+      `Current text: ${text || '(empty)'}`,
+      previous ? `Previous text: ${previous.slice(0, 800)}` : ''
+    ].filter(Boolean).join('\n');
+    if (lastCyberSnapshot) lastCyberSnapshot = { ...lastCyberSnapshot, text, lastChangedAt: msg.changedAt || new Date().toISOString() };
+    queueSaveState();
+    telemetry('cyber_region_changed', {
+      ...pageContextStats(),
+      textChars: text.length,
+      previousChars: previous.length,
+      rect: msg.rect || lastCyberSnapshot?.rect || null
+    }).catch(() => {});
+    pushMsg('assistant', summary);
   }
 
   // Echo/stream from AGNT agent chat (SSE) back into the sidebar placeholder.
@@ -780,6 +916,7 @@ chrome.runtime.onMessage.addListener((msg) => {
 els.refreshBtn.addEventListener('click', () => ensureAndLoadAgents().catch(e => setError(e.message)));
 els.captureBtn.addEventListener('click', () => captureActiveTab().catch(e => setError(e.message)));
 if (els.cyberSnapshotBtn) els.cyberSnapshotBtn.addEventListener('click', () => startCyberSnapshot().catch(e => setError(e.message)));
+if (els.watchRegionBtn) els.watchRegionBtn.addEventListener('click', () => toggleRegionWatch().catch(e => setError(e.message)));
 if (els.actBtn) els.actBtn.addEventListener('click', () => {
   jarvisMode = !jarvisMode;
   renderJarvisBtn();
@@ -814,12 +951,14 @@ document.addEventListener('click', (e) => { if (!e.target.closest('.combo')) clo
     if (saved) {
       jarvisMode = saved.jarvisMode !== false;
       pageContext = saved.pageContext || null;
+      lastCyberSnapshot = saved.lastCyberSnapshot || pageContext?.cyberSnapshot || null;
       chatLog = Array.isArray(saved.chatLog) ? saved.chatLog : [];
       rebuildFromChatLog();
       renderContextHint();
     }
 
     renderJarvisBtn();
+    renderWatchRegionBtn();
 
     await ensureAndLoadAgents();
     await refreshEvolutionContext().catch(() => {});
