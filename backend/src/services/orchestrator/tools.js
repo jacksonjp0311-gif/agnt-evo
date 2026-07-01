@@ -24,6 +24,7 @@ import { saveBase64Image } from '../ImageStorage.js';
 import { createLlmClient } from '../ai/LlmService.js';
 import { createLlmAdapter } from './llmAdapters.js';
 import { broadcast, RealtimeEvents } from '../../utils/realtimeSync.js';
+import BrowserPilotTelemetryService from '../telemetry/BrowserPilotTelemetryService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -79,6 +80,42 @@ function resolveDataReferences(args, conversationContext) {
 }
 
 export const TOOLS = {
+  browserpilot_telemetry_graph: {
+    schema: {
+      type: 'function',
+      function: {
+        name: 'browserpilot_telemetry_graph',
+        description:
+          'Read BrowserPilot browser sensory telemetry and its persistent graph. Use this before selecting browser tools/skills or answering questions about the current browser-agent context.',
+        parameters: {
+          type: 'object',
+          properties: {
+            mode: {
+              type: 'string',
+              enum: ['analyze', 'graph', 'summary'],
+              description: 'analyze returns tool hints and graph stats; graph returns nodes/edges; summary returns recent counters.',
+              default: 'analyze',
+            },
+            limit: {
+              type: 'integer',
+              description: 'Recent event window to inspect.',
+              default: 200,
+            },
+          },
+        },
+      },
+    },
+    execute: async ({ mode = 'analyze', limit = 200 } = {}) => {
+      await BrowserPilotTelemetryService.ensureGraphLoaded();
+      if (mode === 'summary') {
+        return JSON.stringify({ success: true, summary: BrowserPilotTelemetryService.summary(limit) });
+      }
+      if (mode === 'graph') {
+        return JSON.stringify({ success: true, graph: BrowserPilotTelemetryService.graphSnapshot() });
+      }
+      return JSON.stringify({ success: true, analysis: BrowserPilotTelemetryService.analyze(limit) });
+    },
+  },
   execute_javascript_code: {
     schema: {
       type: 'function',
@@ -4550,6 +4587,7 @@ export async function executeTool(toolName, args, authToken, context) {
 
       const mockWorkflowEngine = {
         userId: userId,
+        authToken: authToken,
         ...context,
         // Add empty maps/objects required by ParameterResolver
         currentTriggerData: {},

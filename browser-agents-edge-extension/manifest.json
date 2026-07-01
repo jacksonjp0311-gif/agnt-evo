@@ -1,0 +1,49 @@
+{
+  "manifest_version": 3,
+  "name": "AGNT Browser Agents",
+  "version": "0.2.1",
+  "version_name": "0.2.1 telemetry graph",
+  "description": "Run AGNT chat + agents everywhere in Edge: side panel UI, page context capture, and browser control.",
+  "action": {
+    "default_title": "AGNT Browser Agents",
+    "default_icon": {}
+  },
+  "options_page": "options.html",
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "permissions": [
+    "storage",
+    "activeTab",
+    "tabs",
+    "scripting",
+    "sidePanel",
+    "webNavigation",
+    "contextMenus"
+  ],
+  "optional_permissions": [
+    "notifications",
+    "downloads",
+    "clipboardRead",
+    "clipboardWrite",
+    "alarms",
+    "offscreen",
+    "tabCapture"
+  ],
+  "host_permissions": [
+    "<all_urls>",
+    "http://localhost:3333/*",
+    "https://localhost:3333/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["contentScript.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
