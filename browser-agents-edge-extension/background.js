@@ -659,6 +659,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         return;
       }
 
+      if (msg?.type === 'BROWSERPILOT_START_CONTEXT_RADAR') {
+        const tabId = await getActiveTabId();
+        if (typeof tabId !== 'number') throw new Error('No active tab');
+        const res = await chrome.tabs.sendMessage(tabId, { type: 'BROWSERPILOT_START_CONTEXT_RADAR' });
+        await recordTelemetry(res?.ok ? 'context_radar_started' : 'context_radar_failed', {
+          tabId,
+          ok: Boolean(res?.ok),
+          error: res?.ok ? null : res?.error,
+        });
+        sendResponse(res);
+        return;
+      }
+
       if (msg?.type === 'AGNT_EXEC_ACTIVE_TAB') {
         const tabId = await getActiveTabId();
         if (typeof tabId !== 'number') throw new Error('No active tab');
